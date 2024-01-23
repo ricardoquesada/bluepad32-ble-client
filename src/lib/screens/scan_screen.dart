@@ -129,7 +129,10 @@ class _ScanScreenState extends State<ScanScreen> {
   }
 
   List<Widget> _buildScanResultTiles(BuildContext context) {
-    return _scanResults
+    var filteredScanResults = _scanResults.where((r) => r
+        .advertisementData.serviceUuids
+        .contains(Guid.fromString('4627c4a4-ac00-46b9-b688-afc5c1bf7f63')));
+    return filteredScanResults
         .map(
           (r) => ScanResultTile(
             result: r,
