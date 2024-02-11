@@ -10,6 +10,8 @@ import '../widgets/system_device_tile.dart';
 import '../widgets/scan_result_tile.dart';
 import '../utils/extra.dart';
 
+const BP32_UUID = '4627c4a4-ac00-46b9-b688-afc5c1bf7f63';
+
 class ScanScreen extends StatefulWidget {
   const ScanScreen({Key? key}) : super(key: key);
 
@@ -129,9 +131,11 @@ class _ScanScreenState extends State<ScanScreen> {
   }
 
   List<Widget> _buildScanResultTiles(BuildContext context) {
-    var filteredScanResults = _scanResults.where((r) => r
+    var filteredScanResults = _scanResults.where((r) => (r
         .advertisementData.serviceUuids
-        .contains(Guid.fromString('4627c4a4-ac00-46b9-b688-afc5c1bf7f63')));
+        .contains(Guid.fromString(BP32_UUID))
+        && r.advertisementData.connectable)
+    );
     return filteredScanResults
         .map(
           (r) => ScanResultTile(
