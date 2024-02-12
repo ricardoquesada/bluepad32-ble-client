@@ -8,6 +8,22 @@ import "../utils/snackbar.dart";
 
 import "descriptor_tile.dart";
 
+const Map<String, String> uuidToNameMap= const {
+  '4627c4a4-ac01-46b9-b688-afc5c1bf7f63': 'Bluepad32 version',
+  '4627c4a4-ac02-46b9-b688-afc5c1bf7f63': 'Max supported connections',
+  '4627c4a4-ac03-46b9-b688-afc5c1bf7f63': 'Enable BLE connections',
+  '4627c4a4-ac04-46b9-b688-afc5c1bf7f63': 'Start/stop scanning',
+  '4627c4a4-ac05-46b9-b688-afc5c1bf7f63': 'Connected controllers',
+  '4627c4a4-ac06-46b9-b688-afc5c1bf7f63': 'Connected devices notification',
+  '4627c4a4-ac07-46b9-b688-afc5c1bf7f63': 'Gamepad mappings: Xbox or Nintendo',
+  '4627c4a4-ac08-46b9-b688-afc5c1bf7f63': 'Enable Allowlist',
+  '4627c4a4-ac09-46b9-b688-afc5c1bf7f63': 'Controllers in Allowlist',
+  '4627c4a4-ac0a-46b9-b688-afc5c1bf7f63': 'Enable virtual controller',
+  '4627c4a4-ac0b-46b9-b688-afc5c1bf7f63': 'Disconnect controller',
+  '4627c4a4-ac0c-46b9-b688-afc5c1bf7f63': 'Delete stored BT keys',
+  '4627c4a4-ac0d-46b9-b688-afc5c1bf7f63': 'Reboot device'
+};
+
 class CharacteristicTile extends StatefulWidget {
   final BluetoothCharacteristic characteristic;
   final List<DescriptorTile> descriptorTiles;
@@ -85,7 +101,12 @@ class _CharacteristicTileState extends State<CharacteristicTile> {
   }
 
   Widget buildUuid(BuildContext context) {
-    String uuid = '0x${widget.characteristic.uuid.str.toUpperCase()}';
+    String uuid;
+    if (uuidToNameMap.containsKey(widget.characteristic.uuid.str))
+      uuid = uuidToNameMap[widget.characteristic.uuid.str]!;
+    else
+      uuid = '0x${widget.characteristic.uuid.str.toUpperCase()}';
+    print(uuid);
     return Text(uuid, style: TextStyle(fontSize: 13));
   }
 
