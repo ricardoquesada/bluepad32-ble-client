@@ -1,5 +1,5 @@
-name: flutter_blue_plus_example
-description: Demonstrates how to use the flutter_blue_plus plugin.
+name: bluepad32_client
+description: Client for Bluepad32 / Unijosyticle devices
 
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
@@ -11,7 +11,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  flutter_blue_plus: ^1.31.3
+  flutter_blue_plus: ^1.31.13
 
 flutter:
   uses-material-design: true

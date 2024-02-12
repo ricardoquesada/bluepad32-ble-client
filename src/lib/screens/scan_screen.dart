@@ -158,7 +158,8 @@ class _ScanScreenState extends State<ScanScreen> {
           onRefresh: onRefresh,
           child: ListView(
             children: <Widget>[
-              ..._buildSystemDeviceTiles(context),
+              // Don't include SystemDevice
+              // ..._buildSystemDeviceTiles(context),
               ..._buildScanResultTiles(context),
             ],
           ),

@@ -26,10 +26,10 @@ packages:
     dependency: "direct main"
     description:
       name: flutter_blue_plus
-      sha256: "3baf3bfb4876855316b34489204eb090ee5842ba174e47d3b9b2c378d8568fdf"
+      sha256: "976d8cfd4068c392a9c2236bb1952b2bbc3905747f4177c5baa95aaa1f054f75"
       url: "https://pub.dev"
     source: hosted
-    version: "1.31.8"
+    version: "1.31.13"
   material_color_utilities:
     dependency: transitive
     description:
