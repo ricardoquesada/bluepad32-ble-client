@@ -1,4 +1,4 @@
-package com.lib.flutter_blue_plus_example;
+package moe.retro.bluepad32;
 
 import io.flutter.embedding.android.FlutterActivity;
 
