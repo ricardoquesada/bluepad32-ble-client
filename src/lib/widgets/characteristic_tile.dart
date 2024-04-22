@@ -8,7 +8,7 @@ import "../utils/snackbar.dart";
 
 import "descriptor_tile.dart";
 
-const Map<String, String> uuidToNameMap= const {
+const Map<String, String> uuidToNameMap = const {
   '4627c4a4-ac01-46b9-b688-afc5c1bf7f63': 'Bluepad32 version',
   '4627c4a4-ac02-46b9-b688-afc5c1bf7f63': 'Max supported connections',
   '4627c4a4-ac03-46b9-b688-afc5c1bf7f63': 'Enable BLE connections',
@@ -86,7 +86,7 @@ class _CharacteristicTileState extends State<CharacteristicTile> {
 
   Future onSubscribePressed() async {
     try {
-      String op = c.isNotifying == false ? "Subscribe" : "Unubscribe";
+      String op = c.isNotifying == false ? "Subscribe" : "Unsubscribe";
       await c.setNotifyValue(c.isNotifying == false);
       Snackbar.show(ABC.c, "$op : Success", success: true);
       if (c.properties.read) {
