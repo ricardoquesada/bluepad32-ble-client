@@ -9,19 +9,19 @@ import "../utils/snackbar.dart";
 import "descriptor_tile.dart";
 
 const Map<String, Map<String, dynamic>> uuidToBP32CharacteristicMap = const {
-  '4627c4a4-ac01-46b9-b688-afc5c1bf7f63': {'name': 'Bluepad32 version'},
-  '4627c4a4-ac02-46b9-b688-afc5c1bf7f63': {'name': 'Max supported connections'},
+  '4627c4a4-ac01-46b9-b688-afc5c1bf7f63': {'name': 'Bluepad32 version', 'type': 'string'},
+  '4627c4a4-ac02-46b9-b688-afc5c1bf7f63': {'name': 'Max supported connections', 'type': 'int'},
   '4627c4a4-ac03-46b9-b688-afc5c1bf7f63': {'name': 'Enable BLE connections', 'type': 'bool'},
-  '4627c4a4-ac04-46b9-b688-afc5c1bf7f63': {'name': 'Start/stop scanning', 'type': 'bool'},
-  '4627c4a4-ac05-46b9-b688-afc5c1bf7f63': {'name': 'Connected controllers'},
+  '4627c4a4-ac04-46b9-b688-afc5c1bf7f63': {'name': 'Start scanning and auto connect', 'type': 'bool'},
+  '4627c4a4-ac05-46b9-b688-afc5c1bf7f63': {'name': 'Connected controllers', 'type': 'int'},
   '4627c4a4-ac06-46b9-b688-afc5c1bf7f63': {'name': 'Connected devices notification'},
-  '4627c4a4-ac07-46b9-b688-afc5c1bf7f63': {'name': 'Gamepad mappings: Xbox or Nintendo'},
-  '4627c4a4-ac08-46b9-b688-afc5c1bf7f63': {'name': 'Enable Allowlist'},
-  '4627c4a4-ac09-46b9-b688-afc5c1bf7f63': {'name': 'Controllers in Allowlist'},
-  '4627c4a4-ac0a-46b9-b688-afc5c1bf7f63': {'name': 'Enable virtual controller'},
+  '4627c4a4-ac07-46b9-b688-afc5c1bf7f63': {'name': 'Gamepad mappings: Xbox or Nintendo', 'type': 'mapping'},
+  '4627c4a4-ac08-46b9-b688-afc5c1bf7f63': {'name': 'Enable Allowlist', 'type': 'bool'},
+  '4627c4a4-ac09-46b9-b688-afc5c1bf7f63': {'name': 'Controllers in Allowlist', 'type': 'bdaddrs'},
+  '4627c4a4-ac0a-46b9-b688-afc5c1bf7f63': {'name': 'Enable virtual controller', 'type': 'bool'},
   '4627c4a4-ac0b-46b9-b688-afc5c1bf7f63': {'name': 'Disconnect controller'},
-  '4627c4a4-ac0c-46b9-b688-afc5c1bf7f63': {'name': 'Delete stored BT keys'},
-  '4627c4a4-ac0d-46b9-b688-afc5c1bf7f63': {'name': 'Reboot device'},
+  '4627c4a4-ac0c-46b9-b688-afc5c1bf7f63': {'name': 'Delete stored BT keys', 'type': 'button'},
+  '4627c4a4-ac0d-46b9-b688-afc5c1bf7f63': {'name': 'Reboot device', 'type': 'button'},
 };
 
 class CharacteristicTile extends StatefulWidget {
@@ -159,7 +159,6 @@ class _CharacteristicTileState extends State<CharacteristicTile> {
       value: _value.length > 0 && _value[0] != 0,
       onChanged: (bool value) async {
         await onSwitchPressed(value);
-        print("hola mama onChanged");
         if (mounted) {
           setState(() {});
         }
