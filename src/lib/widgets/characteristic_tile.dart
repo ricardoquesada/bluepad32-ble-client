@@ -12,7 +12,7 @@ const Map<String, Map<String, dynamic>> uuidToBP32CharacteristicMap = const {
   '4627c4a4-ac01-46b9-b688-afc5c1bf7f63': {'name': 'Bluepad32 version'},
   '4627c4a4-ac02-46b9-b688-afc5c1bf7f63': {'name': 'Max supported connections'},
   '4627c4a4-ac03-46b9-b688-afc5c1bf7f63': {'name': 'Enable BLE connections', 'type': 'bool'},
-  '4627c4a4-ac04-46b9-b688-afc5c1bf7f63': {'name': 'Start/stop scanning'},
+  '4627c4a4-ac04-46b9-b688-afc5c1bf7f63': {'name': 'Start/stop scanning', 'type': 'bool'},
   '4627c4a4-ac05-46b9-b688-afc5c1bf7f63': {'name': 'Connected controllers'},
   '4627c4a4-ac06-46b9-b688-afc5c1bf7f63': {'name': 'Connected devices notification'},
   '4627c4a4-ac07-46b9-b688-afc5c1bf7f63': {'name': 'Gamepad mappings: Xbox or Nintendo'},
@@ -84,6 +84,22 @@ class _CharacteristicTileState extends State<CharacteristicTile> {
     }
   }
 
+  Future onSwitchPressed(bool value) async {
+    try {
+      await c.write([value ? 1 : 0], withoutResponse: c.properties.writeWithoutResponse);
+      Snackbar.show(ABC.c, "Write: Success", success: true);
+    } catch (e) {
+      Snackbar.show(ABC.c, prettyException("Write Error:", e), success: false);
+    }
+    try {
+      if (c.properties.read) {
+        await c.read();
+      }
+    } catch (e) {
+      Snackbar.show(ABC.c, prettyException("Write Error:", e), success: false);
+    }
+  }
+
   Future onSubscribePressed() async {
     try {
       String op = c.isNotifying == false ? "Subscribe" : "Unsubscribe";
@@ -138,6 +154,19 @@ class _CharacteristicTileState extends State<CharacteristicTile> {
         });
   }
 
+  Widget buildSwitchButton(BuildContext context) {
+    return Switch(
+      value: _value.length > 0 && _value[0] != 0,
+      onChanged: (bool value) async {
+        await onSwitchPressed(value);
+        print("hola mama onChanged");
+        if (mounted) {
+          setState(() {});
+        }
+      },
+    );
+  }
+
   Widget buildSubscribeButton(BuildContext context) {
     bool isNotifying = widget.characteristic.isNotifying;
     return TextButton(
@@ -155,12 +184,16 @@ class _CharacteristicTileState extends State<CharacteristicTile> {
     bool write = widget.characteristic.properties.write;
     bool notify = widget.characteristic.properties.notify;
     bool indicate = widget.characteristic.properties.indicate;
+    bool toggle = uuidToBP32CharacteristicMap.containsKey(widget.characteristic.uuid.str)
+        && uuidToBP32CharacteristicMap[widget.characteristic.uuid.str]!.containsKey('type')
+        && uuidToBP32CharacteristicMap[widget.characteristic.uuid.str]!['type']! == 'bool';
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         if (read) buildReadButton(context),
         if (write) buildWriteButton(context),
         if (notify || indicate) buildSubscribeButton(context),
+        if (toggle) buildSwitchButton(context),
       ],
     );
   }
