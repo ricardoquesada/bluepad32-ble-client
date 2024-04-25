@@ -84,9 +84,9 @@ class _CharacteristicTileState extends State<CharacteristicTile> {
     }
   }
 
-  Future onSwitchPressed(bool value) async {
+  Future writeInt(int value) async {
     try {
-      await c.write([value ? 1 : 0], withoutResponse: c.properties.writeWithoutResponse);
+      await c.write([value], withoutResponse: c.properties.writeWithoutResponse);
       Snackbar.show(ABC.c, "Write: Success", success: true);
     } catch (e) {
       Snackbar.show(ABC.c, prettyException("Write Error:", e), success: false);
@@ -158,11 +158,23 @@ class _CharacteristicTileState extends State<CharacteristicTile> {
     return Switch(
       value: _value.length > 0 && _value[0] != 0,
       onChanged: (bool value) async {
-        await onSwitchPressed(value);
+        await writeInt(value ? 1 : 0);
         if (mounted) {
           setState(() {});
         }
       },
+    );
+  }
+
+  Widget buildPushButton(BuildContext context) {
+    return ElevatedButton(
+        child: const Text('Button'),
+        onPressed: () async {
+          await writeInt(1);
+          if (mounted) {
+            setState(() {});
+          }
+        },
     );
   }
 
@@ -179,13 +191,19 @@ class _CharacteristicTileState extends State<CharacteristicTile> {
   }
 
   Widget buildButtonRow(BuildContext context) {
+    bool toggle = false;
+    bool button = false;
     bool read = widget.characteristic.properties.read;
     bool write = widget.characteristic.properties.write;
     bool notify = widget.characteristic.properties.notify;
     bool indicate = widget.characteristic.properties.indicate;
-    bool toggle = uuidToBP32CharacteristicMap.containsKey(widget.characteristic.uuid.str)
-        && uuidToBP32CharacteristicMap[widget.characteristic.uuid.str]!.containsKey('type')
-        && uuidToBP32CharacteristicMap[widget.characteristic.uuid.str]!['type']! == 'bool';
+    if (uuidToBP32CharacteristicMap.containsKey(widget.characteristic.uuid.str)
+        && uuidToBP32CharacteristicMap[widget.characteristic.uuid.str]!.containsKey('type')) {
+      toggle = uuidToBP32CharacteristicMap[widget.characteristic.uuid
+          .str]!['type']! == 'bool';
+      button = uuidToBP32CharacteristicMap[widget.characteristic.uuid
+          .str]!['type']! == 'button';
+    }
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -193,6 +211,7 @@ class _CharacteristicTileState extends State<CharacteristicTile> {
         if (write) buildWriteButton(context),
         if (notify || indicate) buildSubscribeButton(context),
         if (toggle) buildSwitchButton(context),
+        if (button) buildPushButton(context),
       ],
     );
   }
