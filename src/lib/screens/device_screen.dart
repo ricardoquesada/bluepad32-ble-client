@@ -12,7 +12,7 @@ import '../utils/extra.dart';
 class DeviceScreen extends StatefulWidget {
   final BluetoothDevice device;
 
-  const DeviceScreen({Key? key, required this.device}) : super(key: key);
+  const DeviceScreen({super.key, required this.device});
 
   @override
   State<DeviceScreen> createState() => _DeviceScreenState();
@@ -88,11 +88,13 @@ class _DeviceScreenState extends State<DeviceScreen> {
     try {
       await widget.device.connectAndUpdateStream();
       Snackbar.show(ABC.c, "Connect: Success", success: true);
-    } catch (e) {
+    } catch (e, backtrace) {
       if (e is FlutterBluePlusException && e.code == FbpErrorCode.connectionCanceled.index) {
         // ignore connections canceled by the user
       } else {
         Snackbar.show(ABC.c, prettyException("Connect Error:", e), success: false);
+        print(e);
+        print("backtrace: $backtrace");
       }
     }
   }
@@ -101,8 +103,10 @@ class _DeviceScreenState extends State<DeviceScreen> {
     try {
       await widget.device.disconnectAndUpdateStream(queue: false);
       Snackbar.show(ABC.c, "Cancel: Success", success: true);
-    } catch (e) {
+    } catch (e, backtrace) {
       Snackbar.show(ABC.c, prettyException("Cancel Error:", e), success: false);
+      print("$e");
+      print("backtrace: $backtrace");
     }
   }
 
@@ -110,8 +114,9 @@ class _DeviceScreenState extends State<DeviceScreen> {
     try {
       await widget.device.disconnectAndUpdateStream();
       Snackbar.show(ABC.c, "Disconnect: Success", success: true);
-    } catch (e) {
+    } catch (e, backtrace) {
       Snackbar.show(ABC.c, prettyException("Disconnect Error:", e), success: false);
+      print("$e backtrace: $backtrace");
     }
   }
 
@@ -124,8 +129,10 @@ class _DeviceScreenState extends State<DeviceScreen> {
     try {
       _services = await widget.device.discoverServices();
       Snackbar.show(ABC.c, "Discover Services: Success", success: true);
-    } catch (e) {
+    } catch (e, backtrace) {
       Snackbar.show(ABC.c, prettyException("Discover Services Error:", e), success: false);
+      print(e);
+      print("backtrace: $backtrace");
     }
     if (mounted) {
       setState(() {
@@ -138,8 +145,10 @@ class _DeviceScreenState extends State<DeviceScreen> {
     try {
       await widget.device.requestMtu(223, predelay: 0);
       Snackbar.show(ABC.c, "Request Mtu: Success", success: true);
-    } catch (e) {
+    } catch (e, backtrace) {
       Snackbar.show(ABC.c, prettyException("Change Mtu Error:", e), success: false);
+      print(e);
+      print("backtrace: $backtrace");
     }
   }
 
@@ -196,16 +205,16 @@ class _DeviceScreenState extends State<DeviceScreen> {
       index: (_isDiscoveringServices) ? 1 : 0,
       children: <Widget>[
         TextButton(
-          child: const Text("Get Services"),
           onPressed: onDiscoverServicesPressed,
+          child: const Text("Get Services"),
         ),
         const IconButton(
           icon: SizedBox(
+            width: 18.0,
+            height: 18.0,
             child: CircularProgressIndicator(
               valueColor: AlwaysStoppedAnimation(Colors.grey),
             ),
-            width: 18.0,
-            height: 18.0,
           ),
           onPressed: null,
         )
@@ -226,8 +235,12 @@ class _DeviceScreenState extends State<DeviceScreen> {
   Widget buildConnectButton(BuildContext context) {
     return Row(children: [
       if (_isConnecting || _isDisconnecting) buildSpinner(context),
-      TextButton(
+      ElevatedButton(
           onPressed: _isConnecting ? onCancelPressed : (isConnected ? onDisconnectPressed : onConnectPressed),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Theme.of(context).primaryColor,
+            foregroundColor: Colors.white,
+          ),
           child: Text(
             _isConnecting ? "CANCEL" : (isConnected ? "DISCONNECT" : "CONNECT"),
             style: Theme.of(context).primaryTextTheme.labelLarge?.copyWith(color: Colors.white),
@@ -242,7 +255,7 @@ class _DeviceScreenState extends State<DeviceScreen> {
       child: Scaffold(
         appBar: AppBar(
           title: Text(widget.device.platformName),
-          actions: [buildConnectButton(context)],
+          actions: [buildConnectButton(context), const SizedBox(width: 15)],
         ),
         body: SingleChildScrollView(
           child: Column(
