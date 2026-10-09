@@ -90,8 +90,24 @@ flutter run -d chrome
 
 ### Running Tests & Static Analysis
 
+Run static analysis and the automated unit and widget test suite from the `src/` directory:
+
 ```bash
 cd src
+
+# Run Dart static analysis and lint checks
 flutter analyze
+
+# Run the full unit and widget test suite
 flutter test
+
+# Run individual test suites
+flutter test test/bluepad32_models_test.dart     # Domain models, binary serialization, and Bluepad32Client GATT service layer
+flutter test test/bluepad32_dashboard_test.dart  # DeviceScreen and Material 3 configuration dashboard cards
+flutter test test/scan_and_tiles_test.dart       # BLE discovery screen (ScanScreen) and peripheral tiles (ScanResultTile, SystemDeviceTile)
+flutter test test/utils_test.dart                # Stream re-emission (StreamControllerReemit), Snackbar, and BluetoothDevice Extra utilities
+flutter test test/widget_test.dart               # App routing (FlutterBlueApp), BluetoothOffScreen, and adapter state observer
+
+# Generate LCOV line coverage report (outputs src/coverage/lcov.info)
+flutter test --coverage
 ```

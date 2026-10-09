@@ -1,7 +1,11 @@
-// Reactive GATT client service layer and transport abstraction for Bluepad32 BLE peripherals.
-//
-// Coordinates connection establishment, MTU negotiation, GATT service discovery,
-// `AC05` notification streaming, and typed reads/writes across `AC01`–`AC0C`.
+/// Reactive GATT client service layer and transport abstraction for Bluepad32
+/// BLE peripherals.
+///
+/// Coordinates connection establishment, MTU negotiation, GATT service
+/// discovery, `AC05` notification streaming, and typed reads/writes across
+/// characteristics `AC01`–`AC0C`, while providing [FakeBluepad32GattTransport]
+/// for deterministic headless unit and widget testing.
+library;
 
 import 'dart:async';
 import 'dart:convert';
@@ -154,6 +158,8 @@ class _DeviceBluepad32GattTransport implements Bluepad32GattTransport {
 class FakeBluepad32GattTransport implements Bluepad32GattTransport {
   final Map<Guid, List<int>> _characteristicValues = <Guid, List<int>>{};
   final Map<Guid, List<Uint8List>> _writeLog = <Guid, List<Uint8List>>{};
+  final Map<Guid, Object Function()> _readThrowers =
+      <Guid, Object Function()>{};
   final Map<Guid, Object Function(List<int> value)> _writeThrowers =
       <Guid, Object Function(List<int> value)>{};
 
@@ -167,6 +173,12 @@ class FakeBluepad32GattTransport implements Bluepad32GattTransport {
 
   /// Number of times [disconnect] was invoked.
   int disconnectCallCount = 0;
+
+  /// Optional error thrown when [connectAndDiscover] is invoked.
+  Object? connectError;
+
+  /// Optional error thrown when [disconnect] is invoked.
+  Object? disconnectError;
 
   /// Number of times each characteristic was read.
   final Map<Guid, int> readCounts = <Guid, int>{};
@@ -237,6 +249,16 @@ class FakeBluepad32GattTransport implements Bluepad32GattTransport {
     _characteristicValues[uuid] = Uint8List.fromList(bytes);
   }
 
+  /// Configures [readCharacteristic] for [uuid] to throw the exception returned
+  /// by [errorBuilder] after incrementing [readCounts].
+  void setReadError(Guid uuid, Object Function()? errorBuilder) {
+    if (errorBuilder == null) {
+      _readThrowers.remove(uuid);
+    } else {
+      _readThrowers[uuid] = errorBuilder;
+    }
+  }
+
   /// Configures [writeCharacteristic] for [uuid] to throw the exception returned
   /// by [errorBuilder] after recording the write.
   void setWriteError(Guid uuid, Object Function(List<int> value)? errorBuilder) {
@@ -285,18 +307,28 @@ class FakeBluepad32GattTransport implements Bluepad32GattTransport {
   @override
   Future<void> connectAndDiscover() async {
     connectCallCount++;
+    if (connectError != null) {
+      throw connectError!;
+    }
     emitConnectionState(BluetoothConnectionState.connected);
   }
 
   @override
   Future<void> disconnect() async {
     disconnectCallCount++;
+    if (disconnectError != null) {
+      throw disconnectError!;
+    }
     emitConnectionState(BluetoothConnectionState.disconnected);
   }
 
   @override
   Future<List<int>> readCharacteristic(Guid uuid) async {
     readCounts[uuid] = (readCounts[uuid] ?? 0) + 1;
+    final Object Function()? thrower = _readThrowers[uuid];
+    if (thrower != null) {
+      throw thrower();
+    }
     return Uint8List.fromList(_characteristicValues[uuid] ?? const <int>[]);
   }
 
@@ -358,6 +390,11 @@ class Bluepad32Client extends ChangeNotifier {
   @visibleForTesting
   Bluepad32GattTransport get transport => _transport;
 
+  /// Subscribes to `AC05` notifications and connection state transitions from
+  /// [_transport].
+  ///
+  /// Guards against transient `disconnected` emissions while `_state.isConnecting`
+  /// is active so initial connection establishment is not prematurely aborted.
   void _bindStreams() {
     _notificationSubscription = _transport.connectedDevicesNotificationStream
         .listen(handleConnectedDevicesPayload);
@@ -377,6 +414,8 @@ class Bluepad32Client extends ChangeNotifier {
     );
   }
 
+  /// Replaces [_state] with [newState] and notifies listeners unless the client
+  /// has already been disposed.
   void _updateState(Bluepad32State newState) {
     if (_disposed) {
       return;
@@ -568,6 +607,9 @@ class Bluepad32Client extends ChangeNotifier {
     _updateState(_state.copyWith(controllers: merged));
   }
 
+  /// Merges decoded `AC05` controller records from [incomingBytes] into
+  /// [existing] (or a fresh table of [maxConnections] empty slots), keyed and
+  /// sorted ascending by [ConnectedController.idx].
   List<ConnectedController> _mergeControllers({
     required List<ConnectedController> existing,
     required List<int> incomingBytes,
@@ -869,6 +911,8 @@ class Bluepad32Client extends ChangeNotifier {
     }
   }
 
+  /// Returns `true` if [error] represents a BLE link disconnection caused by
+  /// an immediate peripheral reboot during [resetDevice] (`AC0C`).
   bool _isDisconnectionException(Object error) {
     if (error is FlutterBluePlusException) {
       if (error.code == FbpErrorCode.deviceIsDisconnected.index) {
@@ -883,6 +927,8 @@ class Bluepad32Client extends ChangeNotifier {
     return message.contains('disconnect') || message.contains('not connected');
   }
 
+  /// Extracts a human-readable message from a [FlutterBluePlusException] or
+  /// generic [error] object for display in the UI error banner.
   String _formatError(Object error) {
     if (error is FlutterBluePlusException) {
       return error.description ?? error.toString();

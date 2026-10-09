@@ -1,4 +1,10 @@
-// BLE discovery screen with Bluepad32 service UUID filtering (`4627C4A4-AC00-46B9-B688-AFC5C1BF7F63`).
+/// BLE discovery screen with Bluepad32 service UUID filtering
+/// (`4627C4A4-AC00-46B9-B688-AFC5C1BF7F63`) and RSSI-prioritized peripheral list.
+///
+/// Queries both system-connected peripherals and live BLE advertisements,
+/// allowing users to filter exclusively for Bluepad32 hosts or inspect all
+/// nearby BLE peripherals before navigating to [DeviceScreen].
+library;
 
 import 'dart:async';
 
@@ -13,9 +19,54 @@ import 'device_screen.dart';
 
 /// Screen for discovering nearby Bluepad32 BLE peripherals and initiating
 /// connections.
+///
+/// Exposes optional stream and callback overrides ([scanResultsStream],
+/// [isScanningStream], [onSystemDevices], [onStartScan], [onStopScan], and
+/// [deviceScreenBuilder]) so widget tests can verify discovery, filtering,
+/// sorting, pull-to-refresh, and error snackbars without native BLE hardware.
 class ScanScreen extends StatefulWidget {
   /// Creates a [ScanScreen] widget.
-  const ScanScreen({super.key});
+  const ScanScreen({
+    super.key,
+    this.scanResultsStream,
+    this.isScanningStream,
+    this.onSystemDevices,
+    this.onStartScan,
+    this.onStopScan,
+    this.deviceScreenBuilder,
+  });
+
+  /// Optional override stream of discovered BLE scan results for widget testing.
+  ///
+  /// Defaults to [FlutterBluePlus.scanResults] when omitted.
+  final Stream<List<ScanResult>>? scanResultsStream;
+
+  /// Optional override stream of scan-in-progress state for widget testing.
+  ///
+  /// Defaults to [FlutterBluePlus.isScanning] when omitted.
+  final Stream<bool>? isScanningStream;
+
+  /// Optional override callback for querying system-connected Bluepad32 devices.
+  ///
+  /// Defaults to [FlutterBluePlus.systemDevices] when omitted.
+  final Future<List<BluetoothDevice>> Function(List<Guid> withServices)?
+      onSystemDevices;
+
+  /// Optional override callback for starting a BLE scan.
+  ///
+  /// Defaults to [FlutterBluePlus.startScan] when omitted.
+  final Future<void> Function({required List<Guid> withServices})? onStartScan;
+
+  /// Optional override callback for stopping an active BLE scan.
+  ///
+  /// Defaults to [FlutterBluePlus.stopScan] when omitted.
+  final Future<void> Function()? onStopScan;
+
+  /// Optional builder for the destination screen pushed when a device is selected.
+  ///
+  /// Defaults to constructing [DeviceScreen] for the selected [BluetoothDevice].
+  final Widget Function(BuildContext context, BluetoothDevice device)?
+      deviceScreenBuilder;
 
   @override
   State<ScanScreen> createState() => _ScanScreenState();
@@ -34,7 +85,9 @@ class _ScanScreenState extends State<ScanScreen> {
   void initState() {
     super.initState();
 
-    _scanResultsSubscription = FlutterBluePlus.scanResults.listen(
+    final Stream<List<ScanResult>> resultsStream =
+        widget.scanResultsStream ?? FlutterBluePlus.scanResults;
+    _scanResultsSubscription = resultsStream.listen(
       (List<ScanResult> results) {
         if (mounted) {
           setState(() => _scanResults = results);
@@ -45,7 +98,9 @@ class _ScanScreenState extends State<ScanScreen> {
       },
     );
 
-    _isScanningSubscription = FlutterBluePlus.isScanning.listen((bool state) {
+    final Stream<bool> scanningStream =
+        widget.isScanningStream ?? FlutterBluePlus.isScanning;
+    _isScanningSubscription = scanningStream.listen((bool state) {
       if (mounted) {
         setState(() => _isScanning = state);
       }
@@ -59,11 +114,18 @@ class _ScanScreenState extends State<ScanScreen> {
     super.dispose();
   }
 
+  /// Queries OS-connected Bluepad32 devices and starts a 15-second BLE scan.
+  ///
+  /// When `_filterByBluepad32` is enabled, restricts hardware/OS scan filtering
+  /// to [Bluepad32Uuids.service]; otherwise scans all BLE advertisements while
+  /// still requesting [Bluepad32Uuids.service] in `webOptionalServices` for Web
+  /// Bluetooth access.
   Future<void> onScanPressed() async {
     try {
-      _systemDevices = await FlutterBluePlus.systemDevices(
-        <Guid>[Bluepad32Uuids.service],
-      );
+      final List<Guid> services = <Guid>[Bluepad32Uuids.service];
+      _systemDevices = widget.onSystemDevices != null
+          ? await widget.onSystemDevices!(services)
+          : await FlutterBluePlus.systemDevices(services);
     } catch (e) {
       Snackbar.show(
         ABC.b,
@@ -72,15 +134,20 @@ class _ScanScreenState extends State<ScanScreen> {
       );
     }
     try {
-      await FlutterBluePlus.startScan(
-        timeout: const Duration(seconds: 15),
-        withServices: _filterByBluepad32
-            ? <Guid>[Bluepad32Uuids.service]
-            : const <Guid>[],
-        webOptionalServices: <Guid>[
-          Bluepad32Uuids.service,
-        ],
-      );
+      final List<Guid> withServices = _filterByBluepad32
+          ? <Guid>[Bluepad32Uuids.service]
+          : const <Guid>[];
+      if (widget.onStartScan != null) {
+        await widget.onStartScan!(withServices: withServices);
+      } else {
+        await FlutterBluePlus.startScan(
+          timeout: const Duration(seconds: 15),
+          withServices: withServices,
+          webOptionalServices: <Guid>[
+            Bluepad32Uuids.service,
+          ],
+        );
+      }
     } catch (e) {
       Snackbar.show(
         ABC.b,
@@ -93,9 +160,14 @@ class _ScanScreenState extends State<ScanScreen> {
     }
   }
 
+  /// Stops an active BLE scan and reports any platform failure via [Snackbar].
   Future<void> onStopPressed() async {
     try {
-      await FlutterBluePlus.stopScan();
+      if (widget.onStopScan != null) {
+        await widget.onStopScan!();
+      } else {
+        await FlutterBluePlus.stopScan();
+      }
     } catch (e) {
       Snackbar.show(
         ABC.b,
@@ -111,12 +183,16 @@ class _ScanScreenState extends State<ScanScreen> {
   /// discovery sequence cleanly.
   void onConnectPressed(BluetoothDevice device) {
     final MaterialPageRoute<void> route = MaterialPageRoute<void>(
-      builder: (BuildContext context) => DeviceScreen(device: device),
+      builder: (BuildContext context) =>
+          widget.deviceScreenBuilder?.call(context, device) ??
+          DeviceScreen(device: device),
       settings: const RouteSettings(name: '/DeviceScreen'),
     );
     Navigator.of(context).push(route);
   }
 
+  /// Initiates a new scan on pull-to-refresh if not already scanning and
+  /// returns a short delay so the [RefreshIndicator] animation settles smoothly.
   Future<void> onRefresh() {
     if (!_isScanning) {
       onScanPressed();
@@ -214,12 +290,17 @@ class _ScanScreenState extends State<ScanScreen> {
         .toList();
   }
 
+  /// Filters and sorts discovered [ScanResult] items into [ScanResultTile]s.
+  ///
+  /// Bluepad32 peripherals are always pinned above generic BLE peripherals, and
+  /// ties within each group are ordered by strongest signal (descending RSSI).
   List<Widget> _buildScanResultTiles() {
     final List<ScanResult> visibleResults = _filterByBluepad32
         ? _scanResults.where(ScanResultTile.isBluepad32Peripheral).toList()
         : List<ScanResult>.from(_scanResults);
 
-    // Sort Bluepad32 peripherals to the top when viewing all BLE devices.
+    // Sort Bluepad32 peripherals to the top when viewing all BLE devices,
+    // then order by strongest RSSI (descending).
     visibleResults.sort((ScanResult a, ScanResult b) {
       final bool aIsBp = ScanResultTile.isBluepad32Peripheral(a);
       final bool bIsBp = ScanResultTile.isBluepad32Peripheral(b);

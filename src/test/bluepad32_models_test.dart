@@ -1,6 +1,26 @@
+/// Unit tests for Bluepad32 GATT binary protocol models, enums, immutable state,
+/// and [Bluepad32Client] service layer interactions.
+///
+/// Covers:
+/// - [Bluepad32Uuids] service (`AC00`) and characteristic (`AC01`–`AC0C`) constants
+/// - [ConnectedController] 16-byte `compact_device_t` little-endian decoding,
+///   64-byte 4-slot table parsing, and slot occupancy boundary conditions
+/// - [MacAddress] parsing, normalization, zero-sentinel filtering, and byte serialization
+/// - [GamepadMappings] and [GamepadMappingsType] decoding and fallback defaults
+/// - [Bluepad32ControllerType], [Bluepad32ControllerSubtype], and
+///   [Bluepad32DeviceState] enum mappings, labels, and Material icons
+/// - [Bluepad32State] immutability, `copyWith(clearError: true)`, and equality
+/// - [Bluepad32Client] GATT read/write/notify lifecycle, allowlist 6-zero-byte
+///   clearing (`AC08`), reboot disconnection tolerance (`AC0C`), and production
+///   GATT transport discovery via in-memory [BluetoothDevice] fakes.
+library;
+
+import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:bluepad32_client/services/bluepad32_client.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -60,6 +80,25 @@ void main() {
         Guid('4627c4a4-ac0c-46b9-b688-afc5c1bf7f63'),
       );
       expect(Bluepad32Uuids.allCharacteristics, hasLength(12));
+    });
+
+    test('Bluepad32Uuids aliases match primary characteristic UUIDs', () {
+      expect(
+        Bluepad32Uuids.virtualDevicesEnabled,
+        equals(Bluepad32Uuids.virtualDeviceEnabled),
+      );
+      expect(Bluepad32Uuids.ac01, equals(Bluepad32Uuids.version));
+      expect(Bluepad32Uuids.ac02, equals(Bluepad32Uuids.maxConnections));
+      expect(Bluepad32Uuids.ac03, equals(Bluepad32Uuids.bleEnabled));
+      expect(Bluepad32Uuids.ac04, equals(Bluepad32Uuids.scanning));
+      expect(Bluepad32Uuids.ac05, equals(Bluepad32Uuids.connectedDevices));
+      expect(Bluepad32Uuids.ac06, equals(Bluepad32Uuids.mappings));
+      expect(Bluepad32Uuids.ac07, equals(Bluepad32Uuids.allowlistEnabled));
+      expect(Bluepad32Uuids.ac08, equals(Bluepad32Uuids.allowlistAddresses));
+      expect(Bluepad32Uuids.ac09, equals(Bluepad32Uuids.virtualDeviceEnabled));
+      expect(Bluepad32Uuids.ac0a, equals(Bluepad32Uuids.disconnectDevice));
+      expect(Bluepad32Uuids.ac0b, equals(Bluepad32Uuids.deleteStoredKeys));
+      expect(Bluepad32Uuids.ac0c, equals(Bluepad32Uuids.resetDevice));
     });
   });
 
@@ -235,6 +274,50 @@ void main() {
       expect(caseD.isConnected, isFalse);
       expect(caseD.isOccupied, isFalse);
     });
+
+    test('ConnectedController equality, hashCode, toString, and negative offset guard', () {
+      final ConnectedController a = ConnectedController(
+        idx: 1,
+        address: MacAddress.parse('AA:BB:CC:DD:EE:FF'),
+        vendorId: 0x054C,
+        productId: 0x0CE6,
+        state: Bluepad32DeviceState.deviceReady,
+        incoming: true,
+        controllerType: Bluepad32ControllerType.ps5Controller,
+        controllerSubtype: Bluepad32ControllerSubtype.none,
+      );
+      final ConnectedController b = ConnectedController(
+        idx: 1,
+        address: MacAddress.parse('AA:BB:CC:DD:EE:FF'),
+        vendorId: 0x054C,
+        productId: 0x0CE6,
+        state: Bluepad32DeviceState.deviceReady,
+        incoming: true,
+        controllerType: Bluepad32ControllerType.ps5Controller,
+        controllerSubtype: Bluepad32ControllerSubtype.none,
+      );
+      final ConnectedController c = ConnectedController.empty(1);
+
+      expect(a, equals(a));
+      expect(a, equals(b));
+      expect(a.hashCode, equals(b.hashCode));
+      expect(a, isNot(equals(c)));
+      expect(a == Object(), isFalse);
+
+      expect(
+        a.toString(),
+        equals(
+          'ConnectedController(idx: 1, address: AA:BB:CC:DD:EE:FF, '
+          'vidPid: 054C:0CE6, state: deviceReady, incoming: true, '
+          'type: ps5Controller, subtype: none)',
+        ),
+      );
+
+      expect(
+        () => ConnectedController.fromBytes(a.toBytes(), -1),
+        throwsRangeError,
+      );
+    });
   });
 
   group('3.2 MacAddress Parsing, Normalization & Serialization', () {
@@ -246,6 +329,9 @@ void main() {
         mac!.toBytes(),
         equals(Uint8List.fromList(<int>[0x11, 0x22, 0x33, 0xAA, 0xBB, 0xCC])),
       );
+      expect(mac.octets, equals(<int>[0x11, 0x22, 0x33, 0xAA, 0xBB, 0xCC]));
+      expect(mac == Object(), isFalse);
+      expect(mac, isNot(equals(MacAddress.zero)));
     });
 
     test('normalizes lowercase, hyphen-separated, and padded strings', () {
@@ -297,6 +383,34 @@ void main() {
       final MacAddress mac = MacAddress.fromBytes(raw);
       expect(mac.toString(), 'DE:AD:BE:EF:00:01');
       expect(mac.toBytes(), equals(Uint8List.fromList(raw)));
+    });
+
+    test('MacAddress.fromBytes throws RangeError on negative offset or short buffer', () {
+      expect(
+        () => MacAddress.fromBytes(const <int>[1, 2, 3, 4, 5, 6], -1),
+        throwsRangeError,
+      );
+      expect(
+        () => MacAddress.fromBytes(const <int>[1, 2, 3, 4, 5]),
+        throwsRangeError,
+      );
+      expect(
+        () => MacAddress.fromBytes(const <int>[1, 2, 3, 4, 5, 6], 2),
+        throwsRangeError,
+      );
+    });
+
+    test('MacAddress.listFromBytes ignores trailing unaligned bytes', () {
+      final List<int> fourteenBytes = <int>[
+        0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, // MAC 1
+        0x11, 0x22, 0x33, 0x44, 0x55, 0x66, // MAC 2
+        0xAA, 0xBB, // 2 trailing unaligned bytes
+      ];
+      final List<MacAddress> parsed = MacAddress.listFromBytes(fourteenBytes);
+      expect(parsed, <MacAddress>[
+        MacAddress.parse('AA:BB:CC:DD:EE:FF'),
+        MacAddress.parse('11:22:33:44:55:66'),
+      ]);
     });
 
     test('filters zero sentinel entries in listFromBytes()', () {
@@ -381,10 +495,14 @@ void main() {
       final GamepadMappings updated = initial.copyWith(
         type: GamepadMappingsType.switchLayout,
       );
+      final GamepadMappings updatedCustom = updated.copyWith(customValue: 5);
 
       expect(initial.toBytes(), equals(Uint8List.fromList(<int>[0])));
       expect(updated.toBytes(), equals(Uint8List.fromList(<int>[1])));
+      expect(updatedCustom.type, GamepadMappingsType.switchLayout);
+      expect(updatedCustom.customValue, 5);
       expect(initial, isNot(equals(updated)));
+      expect(initial == Object(), isFalse);
       expect(
         updated,
         equals(const GamepadMappings(type: GamepadMappingsType.switchLayout)),
@@ -394,6 +512,31 @@ void main() {
         equals(
           const GamepadMappings(type: GamepadMappingsType.switchLayout).hashCode,
         ),
+      );
+    });
+
+    test('GamepadMappingsType.fromValue fallback and GamepadMappings.toString', () {
+      expect(
+        GamepadMappingsType.fromValue(99),
+        equals(GamepadMappingsType.xbox),
+      );
+
+      final GamepadMappings fallbackSingleByte =
+          GamepadMappings.fromBytes(const <int>[99]);
+      expect(fallbackSingleByte.type, equals(GamepadMappingsType.xbox));
+      expect(fallbackSingleByte.customValue, equals(0));
+
+      final GamepadMappings fallbackTwoBytes =
+          GamepadMappings.fromBytes(const <int>[99, 42]);
+      expect(fallbackTwoBytes.type, equals(GamepadMappingsType.xbox));
+      expect(fallbackTwoBytes.customValue, equals(42));
+
+      expect(
+        const GamepadMappings(
+          type: GamepadMappingsType.switchLayout,
+          customValue: 1,
+        ).toString(),
+        equals('GamepadMappings(type: switchLayout, customValue: 1)'),
       );
     });
   });
@@ -511,6 +654,45 @@ void main() {
       expect(outOfRange, Bluepad32DeviceState.unknown);
       expect(outOfRange.isReady, isFalse);
     });
+
+    test('label getters and icon switch branches', () {
+      for (final Bluepad32ControllerType type in Bluepad32ControllerType.values) {
+        expect(type.label, equals(type.displayName));
+      }
+      for (final Bluepad32ControllerSubtype subtype
+          in Bluepad32ControllerSubtype.values) {
+        expect(subtype.label, equals(subtype.displayName));
+      }
+      for (final Bluepad32DeviceState state in Bluepad32DeviceState.values) {
+        expect(state.label, equals(state.displayName));
+      }
+
+      expect(Bluepad32ControllerType.genericKeyboard.icon, equals(Icons.keyboard));
+      expect(Bluepad32ControllerType.genericMouse.icon, equals(Icons.mouse));
+      expect(
+        Bluepad32ControllerType.smartTvRemoteController.icon,
+        equals(Icons.settings_remote),
+      );
+      expect(Bluepad32ControllerType.mobileTouch.icon, equals(Icons.touch_app));
+      expect(Bluepad32ControllerType.none.icon, equals(Icons.help_outline));
+      expect(Bluepad32ControllerType.unknown.icon, equals(Icons.help_outline));
+      expect(
+        Bluepad32ControllerType.ps5Controller.icon,
+        equals(Icons.sports_esports),
+      );
+      expect(
+        Bluepad32ControllerType.xboxOneController.icon,
+        equals(Icons.sports_esports),
+      );
+      expect(
+        Bluepad32ControllerType.switchProController.icon,
+        equals(Icons.sports_esports),
+      );
+      expect(
+        Bluepad32ControllerType.wiiController.icon,
+        equals(Icons.sports_esports),
+      );
+    });
   });
 
   group('3.5 Bluepad32State.copyWith Immutability & Error Clearing', () {
@@ -544,6 +726,88 @@ void main() {
       expect(cleared.errorMessage, isNull);
       expect(cleared.isConnected, isTrue);
       expect(cleared.firmwareVersion, 'v4.2.0');
+    });
+
+    test('Bluepad32State operator == and hashCode across nested lists and scalar fields', () {
+      final ConnectedController slot0 = ConnectedController(
+        idx: 0,
+        address: MacAddress.parse('AA:BB:CC:11:22:33'),
+        vendorId: 0x054C,
+        productId: 0x0CE6,
+        state: Bluepad32DeviceState.deviceReady,
+        incoming: true,
+        controllerType: Bluepad32ControllerType.ps5Controller,
+        controllerSubtype: Bluepad32ControllerSubtype.none,
+      );
+      final MacAddress mac = MacAddress.parse('AA:BB:CC:DD:EE:FF');
+
+      final Bluepad32State s1 = Bluepad32State(
+        isConnecting: false,
+        isConnected: true,
+        isRefreshing: false,
+        errorMessage: null,
+        firmwareVersion: 'v4.2.0',
+        maxConnections: 4,
+        bleEnabled: true,
+        scanningEnabled: false,
+        controllers: <ConnectedController>[slot0],
+        mappings: const GamepadMappings(type: GamepadMappingsType.xbox),
+        allowlistEnabled: true,
+        allowlistAddresses: <MacAddress>[mac],
+        virtualDevicesEnabled: true,
+      );
+
+      final Bluepad32State s2 = Bluepad32State(
+        isConnecting: false,
+        isConnected: true,
+        isRefreshing: false,
+        errorMessage: null,
+        firmwareVersion: 'v4.2.0',
+        maxConnections: 4,
+        bleEnabled: true,
+        scanningEnabled: false,
+        controllers: <ConnectedController>[slot0],
+        mappings: const GamepadMappings(type: GamepadMappingsType.xbox),
+        allowlistEnabled: true,
+        allowlistAddresses: <MacAddress>[mac],
+        virtualDevicesEnabled: true,
+      );
+
+      expect(s1, equals(s1));
+      expect(s1, equals(s2));
+      expect(s1.hashCode, equals(s2.hashCode));
+      expect(s1 == Object(), isFalse);
+
+      expect(s1, isNot(equals(s1.copyWith(isConnecting: true))));
+      expect(s1, isNot(equals(s1.copyWith(isConnected: false))));
+      expect(s1, isNot(equals(s1.copyWith(isRefreshing: true))));
+      expect(s1, isNot(equals(s1.copyWith(errorMessage: 'err'))));
+      expect(s1, isNot(equals(s1.copyWith(firmwareVersion: 'v4.3.0'))));
+      expect(s1, isNot(equals(s1.copyWith(maxConnections: 2))));
+      expect(s1, isNot(equals(s1.copyWith(bleEnabled: false))));
+      expect(s1, isNot(equals(s1.copyWith(scanningEnabled: true))));
+      expect(
+        s1,
+        isNot(equals(s1.copyWith(controllers: const <ConnectedController>[]))),
+      );
+      expect(
+        s1,
+        isNot(
+          equals(
+            s1.copyWith(
+              mappings: const GamepadMappings(
+                type: GamepadMappingsType.switchLayout,
+              ),
+            ),
+          ),
+        ),
+      );
+      expect(s1, isNot(equals(s1.copyWith(allowlistEnabled: false))));
+      expect(
+        s1,
+        isNot(equals(s1.copyWith(allowlistAddresses: const <MacAddress>[]))),
+      );
+      expect(s1, isNot(equals(s1.copyWith(virtualDevicesEnabled: false))));
     });
   });
 
@@ -756,5 +1020,629 @@ void main() {
         equals(Uint8List.fromList(<int>[1])),
       );
     });
+
+    test('connect() failure sets errorMessage and resets isConnecting/isConnected', () async {
+      final FakeBluepad32GattTransport transport = FakeBluepad32GattTransport()
+        ..connectError = FlutterBluePlusException(
+          ErrorPlatform.fbp,
+          'connect',
+          1,
+          'Connection timeout',
+        );
+      final Bluepad32Client client = Bluepad32Client.test(
+        transport: transport,
+        initialState: const Bluepad32State(),
+      );
+      addTearDown(client.dispose);
+
+      await client.connect();
+
+      expect(transport.connectCallCount, 1);
+      expect(client.state.isConnecting, isFalse);
+      expect(client.state.isConnected, isFalse);
+      expect(
+        client.state.errorMessage,
+        contains('Failed to connect to Bluepad32 device: Connection timeout'),
+      );
+    });
+
+    test('disconnect() failure sets errorMessage and transitions isConnected to false', () async {
+      final FakeBluepad32GattTransport transport = FakeBluepad32GattTransport()
+        ..disconnectError = StateError('GATT link broken');
+      final Bluepad32Client client = Bluepad32Client.test(
+        transport: transport,
+        initialState: const Bluepad32State(isConnected: true),
+      );
+      addTearDown(client.dispose);
+
+      await client.disconnect();
+
+      expect(transport.disconnectCallCount, 1);
+      expect(client.state.isConnected, isFalse);
+      expect(
+        client.state.errorMessage,
+        contains('Disconnect error: Bad state: GATT link broken'),
+      );
+
+      // Clear disconnectError and verify clean disconnect clears errorMessage.
+      transport.disconnectError = null;
+      await client.disconnect();
+      expect(transport.disconnectCallCount, 2);
+      expect(client.state.isConnected, isFalse);
+      expect(client.state.errorMessage, isNull);
+    });
+
+    test('refreshAll() read error and fallback defaults for empty version / zero maxConnections', () async {
+      final FakeBluepad32GattTransport transport = FakeBluepad32GattTransport();
+      transport.setCharacteristicValue(
+        Bluepad32Uuids.version,
+        const <int>[0x00, 0x00],
+      );
+      transport.setCharacteristicValue(
+        Bluepad32Uuids.maxConnections,
+        const <int>[0],
+      );
+
+      final Bluepad32Client client = Bluepad32Client.test(
+        transport: transport,
+        initialState: const Bluepad32State(isConnected: true),
+      );
+      addTearDown(client.dispose);
+
+      await client.refreshAll();
+      expect(client.state.firmwareVersion, equals('Unknown'));
+      expect(client.state.maxConnections, equals(4));
+      expect(client.state.errorMessage, isNull);
+
+      transport.setReadError(
+        Bluepad32Uuids.version,
+        () => StateError('ATT read failed'),
+      );
+      await client.refreshAll();
+      expect(client.state.isRefreshing, isFalse);
+      expect(
+        client.state.errorMessage,
+        contains('Failed to read Bluepad32 state: Bad state: ATT read failed'),
+      );
+
+      transport.setReadError(Bluepad32Uuids.version, null);
+      await client.refreshAll();
+      expect(client.state.isRefreshing, isFalse);
+      expect(client.state.errorMessage, isNull);
+    });
+
+    test('unsolicited connectionStateStream disconnect transitions state only when not connecting', () async {
+      final FakeBluepad32GattTransport transport = FakeBluepad32GattTransport();
+      final Bluepad32Client client = Bluepad32Client.test(
+        transport: transport,
+        initialState: const Bluepad32State(
+          isConnected: true,
+          isConnecting: true,
+        ),
+      );
+      addTearDown(client.dispose);
+
+      // Emitting disconnected while isConnecting == true is ignored by race guard.
+      transport.emitConnectionState(BluetoothConnectionState.disconnected);
+      await Future<void>.delayed(Duration.zero);
+      expect(client.state.isConnecting, isTrue);
+      expect(client.state.isConnected, isTrue);
+
+      // Once isConnecting == false, unsolicited disconnected transitions isConnected to false.
+      client.updateStateForTesting(
+        client.state.copyWith(isConnecting: false, isRefreshing: true),
+      );
+      transport.emitConnectionState(BluetoothConnectionState.disconnected);
+      await Future<void>.delayed(Duration.zero);
+      expect(client.state.isConnected, isFalse);
+      expect(client.state.isRefreshing, isFalse);
+    });
+
+    test('write errors across AC03–AC0C preserve prior state and populate errorMessage', () async {
+      final ConnectedController occupiedSlot0 = ConnectedController(
+        idx: 0,
+        address: MacAddress.parse('AA:BB:CC:11:22:33'),
+        vendorId: 0x054C,
+        productId: 0x0CE6,
+        state: Bluepad32DeviceState.deviceReady,
+        incoming: true,
+        controllerType: Bluepad32ControllerType.ps5Controller,
+        controllerSubtype: Bluepad32ControllerSubtype.none,
+      );
+      final FakeBluepad32GattTransport transport = FakeBluepad32GattTransport(
+        controllers: <ConnectedController>[occupiedSlot0],
+      );
+      final Bluepad32Client client = Bluepad32Client.test(
+        transport: transport,
+        initialState: Bluepad32State(
+          isConnected: true,
+          bleEnabled: true,
+          scanningEnabled: false,
+          mappings: const GamepadMappings(type: GamepadMappingsType.xbox),
+          allowlistEnabled: false,
+          allowlistAddresses: const <MacAddress>[],
+          virtualDevicesEnabled: true,
+          controllers: <ConnectedController>[occupiedSlot0],
+        ),
+      );
+      addTearDown(client.dispose);
+
+      expect(transport.lastWriteFor(Bluepad32Uuids.bleEnabled), isNull);
+      expect(transport.writesFor(Bluepad32Uuids.bleEnabled), isEmpty);
+
+      // 1. AC03 setBleEnabled
+      transport.setWriteError(
+        Bluepad32Uuids.bleEnabled,
+        (_) => StateError('AC03 rejected'),
+      );
+      await client.setBleEnabled(false);
+      expect(client.state.bleEnabled, isTrue);
+      expect(
+        client.state.errorMessage,
+        startsWith('Failed to update BLE setting:'),
+      );
+      transport.setWriteError(Bluepad32Uuids.bleEnabled, null);
+
+      // 2. AC04 setScanningEnabled
+      transport.setWriteError(
+        Bluepad32Uuids.scanning,
+        (_) => StateError('AC04 rejected'),
+      );
+      await client.setScanningEnabled(true);
+      expect(client.state.scanningEnabled, isFalse);
+      expect(
+        client.state.errorMessage,
+        startsWith('Failed to update controller scanning:'),
+      );
+
+      // 3. AC06 setMappingsType
+      transport.setWriteError(
+        Bluepad32Uuids.mappings,
+        (_) => StateError('AC06 rejected'),
+      );
+      await client.setMappingsType(GamepadMappingsType.switchLayout);
+      expect(client.state.mappings.type, equals(GamepadMappingsType.xbox));
+      expect(
+        client.state.errorMessage,
+        startsWith('Failed to update controller mappings:'),
+      );
+
+      // 4. AC07 setAllowlistEnabled
+      transport.setWriteError(
+        Bluepad32Uuids.allowlistEnabled,
+        (_) => StateError('AC07 rejected'),
+      );
+      await client.setAllowlistEnabled(true);
+      expect(client.state.allowlistEnabled, isFalse);
+      expect(
+        client.state.errorMessage,
+        startsWith('Failed to update allowlist enforcement:'),
+      );
+
+      // 5. AC08 setAllowlistAddresses
+      transport.setWriteError(
+        Bluepad32Uuids.allowlistAddresses,
+        (_) => StateError('AC08 rejected'),
+      );
+      await client.setAllowlistAddresses(<MacAddress>[
+        MacAddress.parse('AA:BB:CC:DD:EE:FF'),
+      ]);
+      expect(client.state.allowlistAddresses, isEmpty);
+      expect(
+        client.state.errorMessage,
+        startsWith('Failed to update allowlist addresses:'),
+      );
+
+      // 6. AC09 setVirtualDevicesEnabled
+      transport.setWriteError(
+        Bluepad32Uuids.virtualDeviceEnabled,
+        (_) => StateError('AC09 rejected'),
+      );
+      await client.setVirtualDevicesEnabled(false);
+      expect(client.state.virtualDevicesEnabled, isTrue);
+      expect(
+        client.state.errorMessage,
+        startsWith('Failed to update virtual devices setting:'),
+      );
+
+      // 7. AC0A disconnectDevice
+      transport.setWriteError(
+        Bluepad32Uuids.disconnectDevice,
+        (_) => StateError('AC0A rejected'),
+      );
+      await client.disconnectDevice(0);
+      expect(client.state.activeControllers, hasLength(1));
+      expect(
+        client.state.errorMessage,
+        startsWith('Failed to disconnect controller #0:'),
+      );
+
+      // 8. AC0B deleteStoredKeys
+      transport.setWriteError(
+        Bluepad32Uuids.deleteStoredKeys,
+        (_) => StateError('AC0B rejected'),
+      );
+      await client.deleteStoredKeys();
+      expect(
+        client.state.errorMessage,
+        startsWith('Failed to delete stored bond keys:'),
+      );
+
+      // 9. AC0C resetDevice with non-disconnection exception
+      transport.setWriteError(
+        Bluepad32Uuids.resetDevice,
+        (_) => StateError('Write rejected by security'),
+      );
+      await client.resetDevice();
+      expect(client.state.isConnected, isTrue);
+      expect(
+        client.state.errorMessage,
+        startsWith('Failed to reset device:'),
+      );
+    });
+
+    test('resetDevice() treats string-matched disconnection exceptions and clean write as expected reboot', () async {
+      final FakeBluepad32GattTransport transport = FakeBluepad32GattTransport();
+      final Bluepad32Client client = Bluepad32Client.test(
+        transport: transport,
+        initialState: const Bluepad32State(isConnected: true),
+      );
+      addTearDown(client.dispose);
+
+      // 1. Clean write without exception
+      await client.resetDevice();
+      expect(client.state.isConnected, isFalse);
+      expect(client.state.errorMessage, isNull);
+
+      // 2. FlutterBluePlusException with non-deviceIsDisconnected code but 'not connected' description
+      client.updateStateForTesting(
+        client.state.copyWith(isConnected: true, errorMessage: 'old'),
+      );
+      transport.setWriteError(
+        Bluepad32Uuids.resetDevice,
+        (_) => FlutterBluePlusException(
+          ErrorPlatform.fbp,
+          'write',
+          999,
+          'Peripheral is not connected',
+        ),
+      );
+      await client.resetDevice();
+      expect(client.state.isConnected, isFalse);
+      expect(client.state.errorMessage, isNull);
+
+      // 3. Generic Exception containing 'disconnected'
+      client.updateStateForTesting(
+        client.state.copyWith(isConnected: true, errorMessage: 'old'),
+      );
+      transport.setWriteError(
+        Bluepad32Uuids.resetDevice,
+        (_) => Exception('GATT link disconnected'),
+      );
+      await client.resetDevice();
+      expect(client.state.isConnected, isFalse);
+      expect(client.state.errorMessage, isNull);
+    });
+
+    test('allowlist guards: zero MAC rejection, duplicate no-op, and deduplication', () async {
+      final MacAddress macA = MacAddress.parse('AA:BB:CC:DD:EE:01');
+      final FakeBluepad32GattTransport transport = FakeBluepad32GattTransport();
+      final Bluepad32Client client = Bluepad32Client.test(
+        transport: transport,
+        initialState: const Bluepad32State(isConnected: true),
+      );
+      addTearDown(client.dispose);
+
+      // Zero MAC is rejected without writing to AC08
+      await client.addAllowlistAddress(MacAddress.zero);
+      expect(
+        client.state.errorMessage,
+        equals(
+          'Cannot add all-zero MAC address (00:00:00:00:00:00) to allowlist.',
+        ),
+      );
+      expect(transport.writesFor(Bluepad32Uuids.allowlistAddresses), isEmpty);
+
+      // Add macA
+      await client.addAllowlistAddress(macA);
+      expect(client.state.allowlistAddresses, equals(<MacAddress>[macA]));
+      expect(
+        transport.writesFor(Bluepad32Uuids.allowlistAddresses),
+        hasLength(1),
+      );
+
+      // Adding duplicate macA is a no-op
+      await client.addAllowlistAddress(macA);
+      expect(
+        transport.writesFor(Bluepad32Uuids.allowlistAddresses),
+        hasLength(1),
+      );
+
+      // setAllowlistAddresses deduplicates and strips MacAddress.zero
+      await client.setAllowlistAddresses(<MacAddress>[
+        macA,
+        MacAddress.zero,
+        macA,
+      ]);
+      expect(client.state.allowlistAddresses, equals(<MacAddress>[macA]));
+      expect(
+        transport.lastWriteFor(Bluepad32Uuids.allowlistAddresses),
+        equals(macA.toBytes()),
+      );
+    });
+
+    test('clearError, updateStateForTesting, transport getter, and post-dispose safety', () async {
+      final FakeBluepad32GattTransport transport = FakeBluepad32GattTransport();
+      final Bluepad32Client client = Bluepad32Client.test(
+        transport: transport,
+        initialState: const Bluepad32State(isConnected: true),
+      );
+
+      expect(client.transport, same(transport));
+
+      int listenerNotifications = 0;
+      client.addListener(() {
+        listenerNotifications++;
+      });
+
+      // clearError is a no-op when errorMessage is null
+      client.clearError();
+      expect(listenerNotifications, 0);
+
+      client.updateStateForTesting(
+        client.state.copyWith(errorMessage: 'Some error'),
+      );
+      expect(client.state.errorMessage, equals('Some error'));
+      expect(listenerNotifications, 1);
+
+      client.clearError();
+      expect(client.state.errorMessage, isNull);
+      expect(listenerNotifications, 2);
+
+      // Dispose client and verify post-dispose state updates are ignored safely
+      client.dispose();
+      client.updateStateForTesting(
+        client.state.copyWith(firmwareVersion: 'v9.9.9'),
+      );
+      transport.emitConnectedDevicesNotification(
+        ConnectedController.empty(0).toBytes(),
+      );
+      transport.emitConnectionState(BluetoothConnectionState.disconnected);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(listenerNotifications, 2);
+      expect(client.state.firmwareVersion, isNull);
+    });
+
+    test('Bluepad32Client(device: ...) exercises _DeviceBluepad32GattTransport discovery, read/write, notifications, and missing service/characteristic errors', () async {
+      final _FakeGattBluetoothDevice device = _FakeGattBluetoothDevice(
+        id: 'AA:BB:CC:DD:EE:10',
+      );
+      final Bluepad32Client client = Bluepad32Client(device: device);
+      addTearDown(client.dispose);
+
+      // 1. Before connect(), reading or writing characteristics fails with unavailable characteristic StateError
+      await client.refreshAll();
+      expect(
+        client.state.errorMessage,
+        contains('GATT characteristic ${Bluepad32Uuids.version} is not available.'),
+      );
+      await client.setBleEnabled(true);
+      expect(
+        client.state.errorMessage,
+        contains('GATT characteristic ${Bluepad32Uuids.bleEnabled} is not available.'),
+      );
+
+      // 2. When discoverServices() returns only an unrelated service, connect() reports missing Bluepad32 service
+      device.servicesToReturn = <BluetoothService>[
+        _FakeBluetoothService(
+          remoteId: device.remoteId,
+          serviceUuid: Guid('1800'),
+          characteristics: const <BluetoothCharacteristic>[],
+        ),
+      ];
+      await client.connect();
+      expect(client.state.isConnected, isFalse);
+      expect(
+        client.state.errorMessage,
+        contains('Bluepad32 GATT service (${Bluepad32Uuids.service}) not found on device.'),
+      );
+
+      // 3. Populate Bluepad32 service with AC01..AC09 characteristics and verify connect(), notifications, write, and disconnect()
+      final Map<Guid, _FakeBluetoothCharacteristic> chars =
+          <Guid, _FakeBluetoothCharacteristic>{};
+      for (final Guid uuid in Bluepad32Uuids.allCharacteristics) {
+        chars[uuid] = _FakeBluetoothCharacteristic(
+          remoteId: device.remoteId,
+          serviceUuid: Bluepad32Uuids.service,
+          characteristicUuid: uuid,
+        );
+      }
+      chars[Bluepad32Uuids.version]!.valueToRead = utf8.encode('v4.4.0');
+      chars[Bluepad32Uuids.maxConnections]!.valueToRead = <int>[4];
+      chars[Bluepad32Uuids.bleEnabled]!.valueToRead = <int>[1];
+      chars[Bluepad32Uuids.scanning]!.valueToRead = <int>[0];
+      chars[Bluepad32Uuids.connectedDevices]!.valueToRead =
+          ConnectedController.empty(0).toBytes();
+      chars[Bluepad32Uuids.mappings]!.valueToRead = <int>[0];
+      chars[Bluepad32Uuids.allowlistEnabled]!.valueToRead = <int>[0];
+      chars[Bluepad32Uuids.allowlistAddresses]!.valueToRead = const <int>[];
+      chars[Bluepad32Uuids.virtualDeviceEnabled]!.valueToRead = <int>[1];
+
+      device.servicesToReturn = <BluetoothService>[
+        _FakeBluetoothService(
+          remoteId: device.remoteId,
+          serviceUuid: Bluepad32Uuids.service,
+          characteristics: chars.values.toList(),
+        ),
+      ];
+
+      await client.connect();
+      expect(client.state.isConnected, isTrue);
+      expect(client.state.firmwareVersion, equals('v4.4.0'));
+      expect(chars[Bluepad32Uuids.connectedDevices]!.notifyEnabled, isTrue);
+
+      // Emit an AC05 notification over onValueReceived
+      final ConnectedController slot1 = ConnectedController(
+        idx: 1,
+        address: MacAddress.parse('11:22:33:44:55:66'),
+        vendorId: 0x054C,
+        productId: 0x0CE6,
+        state: Bluepad32DeviceState.deviceReady,
+        incoming: true,
+        controllerType: Bluepad32ControllerType.ps5Controller,
+        controllerSubtype: Bluepad32ControllerSubtype.none,
+      );
+      chars[Bluepad32Uuids.connectedDevices]!.emitNotification(slot1.toBytes());
+      await Future<void>.delayed(Duration.zero);
+      expect(client.state.activeControllers, hasLength(1));
+      expect(client.state.controllers[1], equals(slot1));
+
+      // Write AC03 via _DeviceBluepad32GattTransport.writeCharacteristic
+      await client.setBleEnabled(false);
+      expect(
+        chars[Bluepad32Uuids.bleEnabled]!.lastWrittenValue,
+        equals(<int>[0]),
+      );
+
+      // Disconnect via _DeviceBluepad32GattTransport.disconnect
+      await client.disconnect();
+      expect(client.state.isConnected, isFalse);
+      await chars[Bluepad32Uuids.connectedDevices]!.disposeController();
+    });
   });
+}
+
+/// In-memory [BluetoothDevice] test double that stubs `connect`, `disconnect`,
+/// `discoverServices`, and `cancelWhenDisconnected` to exercise the production
+/// `_DeviceBluepad32GattTransport` without platform channels.
+class _FakeGattBluetoothDevice extends BluetoothDevice {
+  _FakeGattBluetoothDevice({required String id})
+      : super(remoteId: DeviceIdentifier(id));
+
+  final StreamController<BluetoothConnectionState> _connectionController =
+      StreamController<BluetoothConnectionState>.broadcast();
+
+  /// Services returned by [discoverServices] during connection setup.
+  List<BluetoothService> servicesToReturn = const <BluetoothService>[];
+
+  @override
+  Stream<BluetoothConnectionState> get connectionState =>
+      _connectionController.stream;
+
+  @override
+  Future<void> connect({
+    required License license,
+    Duration timeout = const Duration(seconds: 35),
+    int? mtu = 512,
+    bool autoConnect = false,
+  }) async {
+    _connectionController.add(BluetoothConnectionState.connected);
+  }
+
+  @override
+  Future<void> disconnect({
+    int timeout = 35,
+    bool queue = true,
+    int androidDelay = 2000,
+  }) async {
+    _connectionController.add(BluetoothConnectionState.disconnected);
+  }
+
+  @override
+  Future<List<BluetoothService>> discoverServices({
+    bool subscribeToServicesChanged = true,
+    int timeout = 15,
+  }) async {
+    return servicesToReturn;
+  }
+
+  @override
+  void cancelWhenDisconnected(
+    StreamSubscription<dynamic> subscription, {
+    bool next = false,
+    bool delayed = false,
+  }) {}
+}
+
+/// Minimal [BluetoothService] fake exposing a configurable [serviceUuid] and
+/// [characteristics] list for GATT service discovery tests.
+class _FakeBluetoothService implements BluetoothService {
+  _FakeBluetoothService({
+    required this.remoteId,
+    required this.serviceUuid,
+    required this.characteristics,
+  });
+
+  @override
+  final DeviceIdentifier remoteId;
+
+  @override
+  final Guid serviceUuid;
+
+  @override
+  final List<BluetoothCharacteristic> characteristics;
+
+  @override
+  Guid get uuid => serviceUuid;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+/// In-memory [BluetoothCharacteristic] fake that records ATT writes, serves
+/// seeded [valueToRead] payloads, and emits simulated notifications on
+/// [onValueReceived].
+class _FakeBluetoothCharacteristic extends BluetoothCharacteristic {
+  _FakeBluetoothCharacteristic({
+    required super.remoteId,
+    required super.serviceUuid,
+    required super.characteristicUuid,
+  });
+
+  final StreamController<List<int>> _valueController =
+      StreamController<List<int>>.broadcast();
+
+  /// Bytes returned when [read] is called on this characteristic.
+  List<int> valueToRead = const <int>[];
+
+  /// Most recent byte payload passed to [write], or `null` if never written.
+  List<int>? lastWrittenValue;
+
+  /// Whether notifications were enabled via [setNotifyValue].
+  bool notifyEnabled = false;
+
+  /// Pushes a simulated GATT notification payload onto [onValueReceived].
+  void emitNotification(List<int> bytes) {
+    _valueController.add(bytes);
+  }
+
+  /// Closes the internal notification stream controller.
+  Future<void> disposeController() => _valueController.close();
+
+  @override
+  Stream<List<int>> get onValueReceived => _valueController.stream;
+
+  @override
+  Future<bool> setNotifyValue(
+    bool notify, {
+    int timeout = 15,
+    bool forceIndications = false,
+  }) async {
+    notifyEnabled = notify;
+    return true;
+  }
+
+  @override
+  Future<List<int>> read({int timeout = 15}) async => valueToRead;
+
+  @override
+  Future<void> write(
+    List<int> value, {
+    bool withoutResponse = false,
+    bool allowLongWrite = false,
+    int timeout = 15,
+  }) async {
+    lastWrittenValue = List<int>.from(value);
+  }
 }

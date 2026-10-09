@@ -1,50 +1,71 @@
+/// Reactive stream utilities for caching and re-emitting the latest value to
+/// new subscribers.
+///
+/// Used by `extra.dart` to track per-device `isConnecting` and
+/// `isDisconnecting` broadcast streams that replay their current boolean state
+/// immediately upon subscription.
+library;
+
 import 'dart:async';
 
-// It is essentially a stream but:
-//  1. we cache the latestValue of the stream
-//  2. the "latestValue" is re-emitted whenever the stream is listened to
+/// Broadcast stream controller wrapper that caches the most recently emitted
+/// value and replays it immediately to any new subscriber on [stream].
 class StreamControllerReemit<T> {
   T? _latestValue;
 
   final StreamController<T> _controller = StreamController<T>.broadcast();
 
+  /// Creates a [StreamControllerReemit] optionally seeded with [initialValue].
   StreamControllerReemit({T? initialValue}) : _latestValue = initialValue;
 
+  /// Broadcast stream that immediately emits [value] (when non-null) to each
+  /// new listener before forwarding subsequent events.
   Stream<T> get stream {
     return _latestValue != null ? _controller.stream.newStreamWithInitialValue(_latestValue as T) : _controller.stream;
   }
 
+  /// Most recently emitted value, or the initial value if no events have been
+  /// added yet.
   T? get value => _latestValue;
 
+  /// Caches [newValue] as [value] and broadcasts it to all active listeners.
   void add(T newValue) {
     _latestValue = newValue;
     _controller.add(newValue);
   }
 
+  /// Closes the underlying broadcast [StreamController].
   Future<void> close() {
     return _controller.close();
   }
 }
 
-// return a new stream that immediately emits an initial value
-extension _StreamNewStreamWithInitialValue<T> on Stream<T> {
+/// Extension on [Stream] that prepends an immediate [initialValue] emission for
+/// every new subscriber.
+extension StreamNewStreamWithInitialValue<T> on Stream<T> {
+  /// Returns a new stream that synchronously emits [initialValue] when listened
+  /// to and then forwards all data, error, and done events from `this`.
   Stream<T> newStreamWithInitialValue(T initialValue) {
     return transform(_NewStreamWithInitialValueTransformer(initialValue));
   }
 }
 
-// Helper for 'newStreamWithInitialValue' method for streams.
+/// [StreamTransformer] implementation backing
+/// [StreamNewStreamWithInitialValue.newStreamWithInitialValue].
+///
+/// Preserves single-subscription vs. broadcast semantics and manages the
+/// upstream subscription lifecycle across multiple broadcast listeners.
 class _NewStreamWithInitialValueTransformer<T> extends StreamTransformerBase<T, T> {
-  /// the initial value to push to the new stream
+  /// The initial value pushed to the transformed stream upon subscription.
   final T initialValue;
 
-  /// controller for the new stream
+  /// Controller for the transformed downstream stream.
   late StreamController<T> controller;
 
-  /// subscription to the original stream
+  /// Active subscription to the upstream source stream.
   late StreamSubscription<T> subscription;
 
-  /// new stream listener count
+  /// Active downstream listener count.
   var listenerCount = 0;
 
   _NewStreamWithInitialValueTransformer(this.initialValue);
@@ -59,33 +80,32 @@ class _NewStreamWithInitialValueTransformer<T> extends StreamTransformerBase<T, 
   }
 
   Stream<T> _bind(Stream<T> stream, {bool broadcast = false}) {
+    // -------------------------------------------------------------------------
+    // Original Stream Subscription Callbacks
+    // -------------------------------------------------------------------------
 
-    /////////////////////////////////////////
-    /// Original Stream Subscription Callbacks
-    /// 
-
-    /// When the original stream emits data, forward it to our new stream
+    // When the original stream emits data, forward it to our new stream.
     void onData(T data) {
       controller.add(data);
     }
 
-    /// When the original stream is done, close our new stream
+    // When the original stream is done, close our new stream.
     void onDone() {
       controller.close();
     }
 
-    /// When the original stream has an error, forward it to our new stream
+    // When the original stream has an error, forward it to our new stream.
     void onError(Object error) {
       controller.addError(error);
     }
 
-    /// When a client listens to our new stream, emit the
-    /// initial value and subscribe to original stream if needed
+    // When a client listens to our new stream, emit the initial value and
+    // subscribe to the original stream if needed.
     void onListen() {
-      // Emit the initial value to our new stream
+      // Emit the initial value to our new stream.
       controller.add(initialValue);
 
-      // listen to the original stream, if needed
+      // Listen to the original stream on the first subscriber.
       if (listenerCount == 0) {
         subscription = stream.listen(
           onData,
@@ -94,46 +114,41 @@ class _NewStreamWithInitialValueTransformer<T> extends StreamTransformerBase<T, 
         );
       }
 
-      // count listeners of the new stream
+      // Count listeners of the new stream.
       listenerCount++;
     }
 
-    //////////////////////////////////////
-    ///  New Stream Controller Callbacks
-    /// 
+    // -------------------------------------------------------------------------
+    // New Stream Controller Callbacks
+    // -------------------------------------------------------------------------
 
-    /// (Single Subscription Only) When a client pauses
-    /// the new stream, pause the original stream 
+    // (Single-subscription only) Pause the upstream subscription on pause.
     void onPause() {
       subscription.pause();
     }
 
-    /// (Single Subscription Only) When a client resumes
-    /// the new stream, resume the original stream 
+    // (Single-subscription only) Resume the upstream subscription on resume.
     void onResume() {
       subscription.resume();
     }
 
-    /// Called when a client cancels their 
-    /// subscription to the new stream, 
+    // Called when a client cancels their subscription to the new stream.
     void onCancel() {
-      // count listeners of the new stream
+      // Decrement active listener count.
       listenerCount--;
 
-      // when there are no more listeners of the new stream,
-      // cancel the subscription to the original stream,
-      // and close the new stream controller
+      // When there are no more listeners of the new stream, cancel the
+      // upstream subscription and close the downstream controller.
       if (listenerCount == 0) {
         subscription.cancel();
         controller.close();
       }
     }
 
-    //////////////////////////////////////
-    /// Return New Stream
-    /// 
+    // -------------------------------------------------------------------------
+    // Return New Stream
+    // -------------------------------------------------------------------------
 
-    // create a new stream controller
     if (broadcast) {
       controller = StreamController<T>.broadcast(
         onListen: onListen,
