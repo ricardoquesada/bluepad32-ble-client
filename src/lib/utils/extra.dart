@@ -29,11 +29,15 @@ extension Extra on BluetoothDevice {
     return _dstream.stream;
   }
 
-  // connect & update stream
+  /// Connects to the BLE peripheral and updates the [isConnecting] stream.
+  ///
+  /// Note: `mtu` is intentionally left at its default (`512` bytes) rather than
+  /// `null` so `flutter_blue_plus` negotiates a 512-byte ATT MTU on Android
+  /// before `connect()` resolves, enabling full 64-byte `AC05` notifications.
   Future<void> connectAndUpdateStream() async {
     _cstream.add(true);
     try {
-      await connect(license: License.nonprofit, mtu: null);
+      await connect(license: License.nonprofit);
     } finally {
       _cstream.add(false);
     }

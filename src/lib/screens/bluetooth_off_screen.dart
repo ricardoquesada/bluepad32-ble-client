@@ -1,3 +1,5 @@
+// Fallback screen displayed when the host Bluetooth adapter is disabled or unavailable.
+
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -6,9 +8,13 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 import '../utils/snackbar.dart';
 
+/// Screen displayed when the device's Bluetooth adapter is not in the
+/// [BluetoothAdapterState.on] state.
 class BluetoothOffScreen extends StatelessWidget {
+  /// Creates a [BluetoothOffScreen] for the given [adapterState].
   const BluetoothOffScreen({super.key, this.adapterState});
 
+  /// Current state of the host Bluetooth adapter.
   final BluetoothAdapterState? adapterState;
 
   Widget buildBluetoothOffIcon(BuildContext context) {

@@ -1,276 +1,258 @@
-import 'dart:async';
+// Primary Material 3 dashboard screen for monitoring and configuring a Bluepad32 BLE peripheral.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
-import '../widgets/service_tile.dart';
-import '../widgets/characteristic_tile.dart';
-import '../widgets/descriptor_tile.dart';
+import '../services/bluepad32_client.dart';
 import '../utils/snackbar.dart';
-import '../utils/extra.dart';
+import '../widgets/allowlist_card.dart';
+import '../widgets/connected_controllers_card.dart';
+import '../widgets/mappings_card.dart';
+import '../widgets/settings_toggles_card.dart';
+import '../widgets/system_actions_card.dart';
+import '../widgets/system_info_card.dart';
 
+/// Material 3 dashboard screen for monitoring and configuring a connected
+/// Bluepad32 BLE peripheral.
 class DeviceScreen extends StatefulWidget {
-  final BluetoothDevice device;
+  /// Target BLE peripheral when launched from `ScanScreen`.
+  final BluetoothDevice? device;
 
-  const DeviceScreen({super.key, required this.device});
+  /// Optional injected [Bluepad32Client] for dependency injection and widget tests.
+  final Bluepad32Client? client;
+
+  /// Whether to automatically invoke [Bluepad32Client.connect] in [State.initState]
+  /// when the client is not yet connected.
+  final bool autoConnect;
+
+  /// Creates a [DeviceScreen] bound to either a [device] or an injected [client].
+  const DeviceScreen({
+    super.key,
+    this.device,
+    this.client,
+    this.autoConnect = true,
+  }) : assert(
+          device != null || client != null,
+          'Either device or client must be provided to DeviceScreen.',
+        );
 
   @override
   State<DeviceScreen> createState() => _DeviceScreenState();
 }
 
 class _DeviceScreenState extends State<DeviceScreen> {
-  int? _rssi;
-  int? _mtuSize;
-  BluetoothConnectionState _connectionState = BluetoothConnectionState.disconnected;
-  List<BluetoothService> _services = [];
-  bool _isDiscoveringServices = false;
-  bool _isConnecting = false;
-  bool _isDisconnecting = false;
-
-  late StreamSubscription<BluetoothConnectionState> _connectionStateSubscription;
-  late StreamSubscription<bool> _isConnectingSubscription;
-  late StreamSubscription<bool> _isDisconnectingSubscription;
-  late StreamSubscription<int> _mtuSubscription;
+  late final Bluepad32Client _client;
+  // Tracks whether `_client` was created internally by this state (and should be
+  // disposed on unmount) vs. injected externally by a caller or test.
+  late final bool _ownsClient;
 
   @override
   void initState() {
     super.initState();
+    if (widget.client != null) {
+      _client = widget.client!;
+      _ownsClient = false;
+    } else {
+      _client = Bluepad32Client(device: widget.device!);
+      _ownsClient = true;
+    }
 
-    _connectionStateSubscription = widget.device.connectionState.listen((state) async {
-      _connectionState = state;
-      if (state == BluetoothConnectionState.connected) {
-        _services = []; // must rediscover services
-      }
-      if (state == BluetoothConnectionState.connected && _rssi == null) {
-        _rssi = await widget.device.readRssi();
-      }
-      if (mounted) {
-        setState(() {});
-      }
-    });
-
-    _mtuSubscription = widget.device.mtu.listen((value) {
-      _mtuSize = value;
-      if (mounted) {
-        setState(() {});
-      }
-    });
-
-    _isConnectingSubscription = widget.device.isConnecting.listen((value) {
-      _isConnecting = value;
-      if (mounted) {
-        setState(() {});
-      }
-    });
-
-    _isDisconnectingSubscription = widget.device.isDisconnecting.listen((value) {
-      _isDisconnecting = value;
-      if (mounted) {
-        setState(() {});
-      }
-    });
+    if (widget.autoConnect &&
+        !_client.state.isConnected &&
+        !_client.state.isConnecting) {
+      _client.connect();
+    }
   }
 
   @override
   void dispose() {
-    _connectionStateSubscription.cancel();
-    _mtuSubscription.cancel();
-    _isConnectingSubscription.cancel();
-    _isDisconnectingSubscription.cancel();
+    if (_ownsClient) {
+      _client.dispose();
+    }
     super.dispose();
   }
 
-  bool get isConnected {
-    return _connectionState == BluetoothConnectionState.connected;
+  String get _deviceTitle {
+    final BluetoothDevice? dev = widget.device ?? _client.device;
+    if (dev != null && dev.platformName.isNotEmpty) {
+      return dev.platformName;
+    }
+    return 'Bluepad32 Dashboard';
   }
 
-  Future onConnectPressed() async {
-    try {
-      await widget.device.connectAndUpdateStream();
-      Snackbar.show(ABC.c, "Connect: Success", success: true);
-    } catch (e, backtrace) {
-      if (e is FlutterBluePlusException && e.code == FbpErrorCode.connectionCanceled.index) {
-        // ignore connections canceled by the user
-      } else {
-        Snackbar.show(ABC.c, prettyException("Connect Error:", e), success: false);
-        print(e);
-        print("backtrace: $backtrace");
-      }
-    }
+  String? get _remoteId {
+    final BluetoothDevice? dev = widget.device ?? _client.device;
+    return dev?.remoteId.str;
   }
 
-  Future onCancelPressed() async {
-    try {
-      await widget.device.disconnectAndUpdateStream(queue: false);
-      Snackbar.show(ABC.c, "Cancel: Success", success: true);
-    } catch (e, backtrace) {
-      Snackbar.show(ABC.c, prettyException("Cancel Error:", e), success: false);
-      print("$e");
-      print("backtrace: $backtrace");
-    }
-  }
-
-  Future onDisconnectPressed() async {
-    try {
-      await widget.device.disconnectAndUpdateStream();
-      Snackbar.show(ABC.c, "Disconnect: Success", success: true);
-    } catch (e, backtrace) {
-      Snackbar.show(ABC.c, prettyException("Disconnect Error:", e), success: false);
-      print("$e backtrace: $backtrace");
-    }
-  }
-
-  Future onDiscoverServicesPressed() async {
-    if (mounted) {
-      setState(() {
-        _isDiscoveringServices = true;
-      });
-    }
-    try {
-      _services = await widget.device.discoverServices();
-      Snackbar.show(ABC.c, "Discover Services: Success", success: true);
-    } catch (e, backtrace) {
-      Snackbar.show(ABC.c, prettyException("Discover Services Error:", e), success: false);
-      print(e);
-      print("backtrace: $backtrace");
-    }
-    if (mounted) {
-      setState(() {
-        _isDiscoveringServices = false;
-      });
-    }
-  }
-
-  Future onRequestMtuPressed() async {
-    try {
-      await widget.device.requestMtu(223, predelay: 0);
-      Snackbar.show(ABC.c, "Request Mtu: Success", success: true);
-    } catch (e, backtrace) {
-      Snackbar.show(ABC.c, prettyException("Change Mtu Error:", e), success: false);
-      print(e);
-      print("backtrace: $backtrace");
-    }
-  }
-
-  List<Widget> _buildServiceTiles(BuildContext context, BluetoothDevice d) {
-    return _services
-        .map(
-          (s) => ServiceTile(
-            service: s,
-            characteristicTiles: s.characteristics.map((c) => _buildCharacteristicTile(c)).toList(),
+  Widget _buildConnectionActionButton(
+    BuildContext context,
+    Bluepad32State state,
+  ) {
+    final ColorScheme colorScheme = Theme.of(context).colorScheme;
+    if (state.isConnecting) {
+      return Padding(
+        padding: const EdgeInsets.only(right: 12.0),
+        child: FilledButton.tonalIcon(
+          onPressed: _client.disconnect,
+          icon: const SizedBox(
+            width: 14,
+            height: 14,
+            child: CircularProgressIndicator(strokeWidth: 2),
           ),
-        )
-        .toList();
-  }
-
-  CharacteristicTile _buildCharacteristicTile(BluetoothCharacteristic c) {
-    return CharacteristicTile(
-      characteristic: c,
-      descriptorTiles: c.descriptors.map((d) => DescriptorTile(descriptor: d)).toList(),
-    );
-  }
-
-  Widget buildSpinner(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(14.0),
-      child: AspectRatio(
-        aspectRatio: 1.0,
-        child: CircularProgressIndicator(
-          backgroundColor: Colors.black12,
-          color: Colors.black26,
+          label: const Text('Cancel'),
         ),
+      );
+    }
+
+    if (state.isConnected) {
+      return Padding(
+        padding: const EdgeInsets.only(right: 12.0),
+        child: FilledButton.tonalIcon(
+          key: const Key('appbar_disconnect_button'),
+          onPressed: _client.disconnect,
+          style: FilledButton.styleFrom(
+            backgroundColor: colorScheme.errorContainer,
+            foregroundColor: colorScheme.onErrorContainer,
+          ),
+          icon: const Icon(Icons.bluetooth_disabled, size: 18),
+          label: const Text('Disconnect'),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(right: 12.0),
+      child: FilledButton.icon(
+        key: const Key('appbar_connect_button'),
+        onPressed: _client.connect,
+        icon: const Icon(Icons.bluetooth_connected, size: 18),
+        label: const Text('Connect'),
       ),
     );
   }
 
-  Widget buildRemoteId(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(8.0),
-      child: Text('${widget.device.remoteId}'),
-    );
-  }
-
-  Widget buildRssiTile(BuildContext context) {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        isConnected ? const Icon(Icons.bluetooth_connected) : const Icon(Icons.bluetooth_disabled),
-        Text(((isConnected && _rssi != null) ? '${_rssi!} dBm' : ''), style: Theme.of(context).textTheme.bodySmall)
-      ],
-    );
-  }
-
-  Widget buildGetServices(BuildContext context) {
-    return IndexedStack(
-      index: (_isDiscoveringServices) ? 1 : 0,
-      children: <Widget>[
-        TextButton(
-          onPressed: onDiscoverServicesPressed,
-          child: const Text("Get Services"),
-        ),
-        const IconButton(
-          icon: SizedBox(
-            width: 18.0,
-            height: 18.0,
-            child: CircularProgressIndicator(
-              valueColor: AlwaysStoppedAnimation(Colors.grey),
+  Widget _buildErrorBanner(BuildContext context, String errorMessage) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme colorScheme = theme.colorScheme;
+    return Container(
+      key: const Key('dashboard_error_banner'),
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: colorScheme.errorContainer,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: <Widget>[
+          Icon(
+            Icons.error_outline,
+            color: colorScheme.onErrorContainer,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              errorMessage,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: colorScheme.onErrorContainer,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ),
-          onPressed: null,
-        )
-      ],
-    );
-  }
-
-  Widget buildMtuTile(BuildContext context) {
-    return ListTile(
-        title: const Text('MTU Size'),
-        subtitle: Text('$_mtuSize bytes'),
-        trailing: IconButton(
-          icon: const Icon(Icons.edit),
-          onPressed: onRequestMtuPressed,
-        ));
-  }
-
-  Widget buildConnectButton(BuildContext context) {
-    return Row(children: [
-      if (_isConnecting || _isDisconnecting) buildSpinner(context),
-      ElevatedButton(
-          onPressed: _isConnecting ? onCancelPressed : (isConnected ? onDisconnectPressed : onConnectPressed),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Theme.of(context).primaryColor,
-            foregroundColor: Colors.white,
+          IconButton(
+            key: const Key('dismiss_error_button'),
+            tooltip: 'Dismiss error',
+            onPressed: _client.clearError,
+            icon: Icon(
+              Icons.close,
+              color: colorScheme.onErrorContainer,
+            ),
+            visualDensity: VisualDensity.compact,
           ),
-          child: Text(
-            _isConnecting ? "CANCEL" : (isConnected ? "DISCONNECT" : "CONNECT"),
-            style: Theme.of(context).primaryTextTheme.labelLarge?.copyWith(color: Colors.white),
-          ))
-    ]);
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return ScaffoldMessenger(
       key: Snackbar.snackBarKeyC,
-      child: Scaffold(
-        appBar: AppBar(
-          title: Text(widget.device.platformName),
-          actions: [buildConnectButton(context), const SizedBox(width: 15)],
-        ),
-        body: SingleChildScrollView(
-          child: Column(
-            children: <Widget>[
-              buildRemoteId(context),
-              ListTile(
-                leading: buildRssiTile(context),
-                title: Text('Device is ${_connectionState.toString().split('.')[1]}.'),
-                trailing: buildGetServices(context),
+      child: ListenableBuilder(
+        listenable: _client,
+        builder: (BuildContext context, Widget? _) {
+          final Bluepad32State state = _client.state;
+          final bool interactive = state.isConnected && !state.isConnecting;
+
+          return Scaffold(
+            appBar: AppBar(
+              title: Text(_deviceTitle),
+              actions: <Widget>[
+                _buildConnectionActionButton(context, state),
+              ],
+            ),
+            body: RefreshIndicator(
+              onRefresh: _client.refreshAll,
+              child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    if (state.errorMessage != null)
+                      _buildErrorBanner(context, state.errorMessage!),
+                    SystemInfoCard(
+                      state: state,
+                      deviceName: _deviceTitle,
+                      remoteId: _remoteId,
+                      onRefresh: _client.refreshAll,
+                    ),
+                    const SizedBox(height: 12),
+                    ConnectedControllersCard(
+                      controllers: state.controllers,
+                      maxConnections: state.maxConnections,
+                      enabled: interactive,
+                      onDisconnect: _client.disconnectController,
+                    ),
+                    const SizedBox(height: 12),
+                    SettingsTogglesCard(
+                      bleEnabled: state.bleEnabled,
+                      scanningEnabled: state.scanningEnabled,
+                      allowlistEnabled: state.allowlistEnabled,
+                      enabled: interactive,
+                      onBleEnabledChanged: _client.setBleEnabled,
+                      onScanningChanged: _client.setControllerScanning,
+                      onAllowlistEnabledChanged: _client.setAllowlistEnabled,
+                    ),
+                    const SizedBox(height: 12),
+                    AllowlistCard(
+                      addresses: state.allowlistAddresses,
+                      allowlistEnabled: state.allowlistEnabled,
+                      enabled: interactive,
+                      onAddAddress: _client.addAllowlistAddress,
+                      onRemoveAddress: _client.removeAllowlistAddress,
+                    ),
+                    const SizedBox(height: 12),
+                    MappingsCard(
+                      virtualDevicesEnabled: state.virtualDevicesEnabled,
+                      mappings: state.mappings,
+                      enabled: interactive,
+                      onVirtualDevicesChanged: _client.setVirtualDevicesEnabled,
+                      onMappingsTypeChanged: _client.setMappingsType,
+                    ),
+                    const SizedBox(height: 12),
+                    SystemActionsCard(
+                      enabled: interactive,
+                      onDeleteBondKeys: _client.deleteStoredBondKeys,
+                      onResetDevice: _client.resetDevice,
+                    ),
+                    const SizedBox(height: 24),
+                  ],
+                ),
               ),
-              buildMtuTile(context),
-              ..._buildServiceTiles(context, widget.device),
-            ],
-          ),
-        ),
+            ),
+          );
+        },
       ),
     );
   }

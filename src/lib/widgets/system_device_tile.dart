@@ -1,13 +1,22 @@
+// List tile for displaying OS-level already-connected BLE devices matching the Bluepad32 service.
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
+/// List tile representing a system-connected [BluetoothDevice].
 class SystemDeviceTile extends StatefulWidget {
+  /// System-connected BLE peripheral.
   final BluetoothDevice device;
+
+  /// Callback invoked when the device is already connected and the user taps `OPEN`.
   final VoidCallback onOpen;
+
+  /// Callback invoked when the device is disconnected and the user taps `CONNECT`.
   final VoidCallback onConnect;
 
+  /// Creates a [SystemDeviceTile].
   const SystemDeviceTile({
     required this.device,
     required this.onOpen,

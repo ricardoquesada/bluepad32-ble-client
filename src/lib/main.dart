@@ -15,18 +15,26 @@ void main() {
   runApp(const FlutterBlueApp());
 }
 
-//
-// This widget shows BluetoothOffScreen or
-// ScanScreen depending on the adapter state
-//
+/// Alias for [FlutterBlueApp].
+typedef Bluepad32App = FlutterBlueApp;
+
+/// Root application widget that displays [ScanScreen] when the Bluetooth
+/// adapter is on, or [BluetoothOffScreen] otherwise.
 class FlutterBlueApp extends StatefulWidget {
-  const FlutterBlueApp({super.key});
+  final Stream<BluetoothAdapterState>? adapterStateStream;
+
+  const FlutterBlueApp({
+    super.key,
+    this.adapterStateStream,
+  });
 
   @override
   State<FlutterBlueApp> createState() => _FlutterBlueAppState();
 }
 
 class _FlutterBlueAppState extends State<FlutterBlueApp> {
+  static const Color _seedColor = Color(0xFF1E88E5);
+
   BluetoothAdapterState _adapterState = BluetoothAdapterState.unknown;
 
   late StreamSubscription<BluetoothAdapterState> _adapterStateStateSubscription;
@@ -34,12 +42,19 @@ class _FlutterBlueAppState extends State<FlutterBlueApp> {
   @override
   void initState() {
     super.initState();
-    _adapterStateStateSubscription = FlutterBluePlus.adapterState.listen((state) {
-      _adapterState = state;
-      if (mounted) {
-        setState(() {});
-      }
-    });
+    final Stream<BluetoothAdapterState> stream =
+        widget.adapterStateStream ?? FlutterBluePlus.adapterState;
+    _adapterStateStateSubscription = stream.listen(
+      (BluetoothAdapterState state) {
+        _adapterState = state;
+        if (mounted) {
+          setState(() {});
+        }
+      },
+      onError: (Object _) {
+        // Ignore platform-unsupported errors in headless test environments.
+      },
+    );
   }
 
   @override
@@ -50,33 +65,45 @@ class _FlutterBlueAppState extends State<FlutterBlueApp> {
 
   @override
   Widget build(BuildContext context) {
-    Widget screen = _adapterState == BluetoothAdapterState.on
+    final Widget screen = _adapterState == BluetoothAdapterState.on
         ? const ScanScreen()
         : BluetoothOffScreen(adapterState: _adapterState);
 
     return MaterialApp(
-      color: Colors.lightBlue,
+      title: 'Bluepad32 BLE Client',
+      color: _seedColor,
       debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        useMaterial3: true,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: _seedColor,
+          brightness: Brightness.light,
+        ),
+      ),
+      darkTheme: ThemeData(
+        useMaterial3: true,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: _seedColor,
+          brightness: Brightness.dark,
+        ),
+      ),
       home: screen,
-      navigatorObservers: [BluetoothAdapterStateObserver()],
+      navigatorObservers: <NavigatorObserver>[BluetoothAdapterStateObserver()],
     );
   }
 }
 
-//
-// This observer listens for Bluetooth Off and dismisses the DeviceScreen
-//
+/// Observer that listens for Bluetooth turning off and pops `/DeviceScreen`.
 class BluetoothAdapterStateObserver extends NavigatorObserver {
   StreamSubscription<BluetoothAdapterState>? _adapterStateSubscription;
 
   @override
-  void didPush(Route route, Route? previousRoute) {
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
     super.didPush(route, previousRoute);
     if (route.settings.name == '/DeviceScreen') {
-      // Start listening to Bluetooth state changes when a new route is pushed
-      _adapterStateSubscription ??= FlutterBluePlus.adapterState.listen((state) {
+      _adapterStateSubscription ??=
+          FlutterBluePlus.adapterState.listen((BluetoothAdapterState state) {
         if (state != BluetoothAdapterState.on) {
-          // Pop the current route if Bluetooth is off
           navigator?.pop();
         }
       });
@@ -84,9 +111,8 @@ class BluetoothAdapterStateObserver extends NavigatorObserver {
   }
 
   @override
-  void didPop(Route route, Route? previousRoute) {
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
     super.didPop(route, previousRoute);
-    // Cancel the subscription when the route is popped
     _adapterStateSubscription?.cancel();
     _adapterStateSubscription = null;
   }
