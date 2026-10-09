@@ -1,4 +1,4 @@
-// Immutable state snapshot aggregating all Bluepad32 GATT characteristics (`AC01`–`AC09`)
+// Immutable state snapshot aggregating all Bluepad32 GATT characteristics (`AC01`–`AC0E`)
 // and BLE connection status for presentation in the Material 3 dashboard.
 
 import 'package:flutter/foundation.dart';
@@ -8,6 +8,44 @@ import 'gamepad_mappings.dart';
 
 export 'connected_controller.dart';
 export 'gamepad_mappings.dart';
+
+/// Session authentication status reported by characteristic `AC0E` (`serviceAuth`).
+///
+/// Mirrors `uni_bt_service_auth_state_t` in `src/components/bluepad32/include/bt/uni_bt_service.h`.
+enum Bluepad32AuthStatus {
+  /// `0`: No password is configured on the peripheral; all characteristics are open.
+  open(0),
+
+  /// `1`: A password is required and the current BLE connection is still locked.
+  required(1),
+
+  /// `2`: A password is required and the current BLE connection has authenticated.
+  authenticated(2);
+
+  /// Raw `uint8_t` wire value returned when reading `AC0E`.
+  final int value;
+
+  const Bluepad32AuthStatus(this.value);
+
+  /// Decodes a single `uint8_t` [value] from `AC0E`, defaulting to [open] for
+  /// unrecognized values.
+  static Bluepad32AuthStatus fromByte(int value) {
+    return switch (value & 0xFF) {
+      1 => Bluepad32AuthStatus.required,
+      2 => Bluepad32AuthStatus.authenticated,
+      _ => Bluepad32AuthStatus.open,
+    };
+  }
+
+  /// Decodes the raw byte list returned from reading `AC0E`, defaulting to
+  /// [open] when [bytes] is empty (e.g., on legacy firmware without `AC0E`).
+  static Bluepad32AuthStatus fromBytes(List<int> bytes) {
+    if (bytes.isEmpty) {
+      return Bluepad32AuthStatus.open;
+    }
+    return fromByte(bytes[0]);
+  }
+}
 
 /// Immutable snapshot of a Bluepad32 device's connection and GATT configuration state.
 @immutable
@@ -26,6 +64,13 @@ class Bluepad32State {
 
   /// Bluepad32 firmware version string read from `AC01` (e.g., `"v4.2.0"`).
   final String? firmwareVersion;
+
+  /// Custom BLE service name read from `AC0D` (e.g., `"Bluepad32 rc car"`),
+  /// or `''` if not set / not yet read.
+  final String serviceName;
+
+  /// Session authentication state read from `AC0E`.
+  final Bluepad32AuthStatus authStatus;
 
   /// Maximum concurrent controller connections read from `AC02` (default `4`).
   final int maxConnections;
@@ -57,6 +102,8 @@ class Bluepad32State {
     this.isRefreshing = false,
     this.errorMessage,
     this.firmwareVersion,
+    this.serviceName = '',
+    this.authStatus = Bluepad32AuthStatus.open,
     this.maxConnections = 4,
     this.bleEnabled = false,
     this.scanningEnabled = false,
@@ -71,10 +118,24 @@ class Bluepad32State {
   List<ConnectedController> get activeControllers =>
       controllers.where((ConnectedController c) => c.isConnected).toList(growable: false);
 
+  /// Whether the connected peripheral has a non-empty service password configured
+  /// ([Bluepad32AuthStatus.required] or [Bluepad32AuthStatus.authenticated]).
+  bool get isPasswordProtected => authStatus != Bluepad32AuthStatus.open;
+
+  /// Whether the connected peripheral is currently locked and requires a password
+  /// write to `AC0E` before telemetry or configuration characteristics can be accessed.
+  bool get requiresAuthentication =>
+      authStatus == Bluepad32AuthStatus.required;
+
+  /// Whether the current session is authorized to read/write protected characteristics
+  /// ([Bluepad32AuthStatus.open] or [Bluepad32AuthStatus.authenticated]).
+  bool get isAuthenticated => authStatus != Bluepad32AuthStatus.required;
+
   /// Creates a copy of this state with updated fields.
   ///
   /// Pass `clearError: true` to clear any existing [errorMessage] (unless a new
   /// non-null [errorMessage] is simultaneously provided).
+  /// Pass `clearServiceName: true` to reset [serviceName] to `''`.
   Bluepad32State copyWith({
     bool? isConnecting,
     bool? isConnected,
@@ -82,6 +143,9 @@ class Bluepad32State {
     String? errorMessage,
     bool clearError = false,
     String? firmwareVersion,
+    String? serviceName,
+    bool clearServiceName = false,
+    Bluepad32AuthStatus? authStatus,
     int? maxConnections,
     bool? bleEnabled,
     bool? scanningEnabled,
@@ -97,6 +161,9 @@ class Bluepad32State {
       isRefreshing: isRefreshing ?? this.isRefreshing,
       errorMessage: clearError ? errorMessage : (errorMessage ?? this.errorMessage),
       firmwareVersion: firmwareVersion ?? this.firmwareVersion,
+      serviceName:
+          clearServiceName ? (serviceName ?? '') : (serviceName ?? this.serviceName),
+      authStatus: authStatus ?? this.authStatus,
       maxConnections: maxConnections ?? this.maxConnections,
       bleEnabled: bleEnabled ?? this.bleEnabled,
       scanningEnabled: scanningEnabled ?? this.scanningEnabled,
@@ -123,6 +190,8 @@ class Bluepad32State {
         other.isRefreshing == isRefreshing &&
         other.errorMessage == errorMessage &&
         other.firmwareVersion == firmwareVersion &&
+        other.serviceName == serviceName &&
+        other.authStatus == authStatus &&
         other.maxConnections == maxConnections &&
         other.bleEnabled == bleEnabled &&
         other.scanningEnabled == scanningEnabled &&
@@ -140,6 +209,8 @@ class Bluepad32State {
         isRefreshing,
         errorMessage,
         firmwareVersion,
+        serviceName,
+        authStatus,
         maxConnections,
         bleEnabled,
         scanningEnabled,

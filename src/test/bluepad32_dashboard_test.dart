@@ -13,10 +13,16 @@
 /// [FakeBluepad32GattTransport].
 library;
 
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:bluepad32_client/screens/device_screen.dart';
 import 'package:bluepad32_client/services/bluepad32_client.dart';
+import 'package:bluepad32_client/widgets/allowlist_card.dart';
+import 'package:bluepad32_client/widgets/connected_controllers_card.dart';
+import 'package:bluepad32_client/widgets/mappings_card.dart';
+import 'package:bluepad32_client/widgets/settings_toggles_card.dart';
+import 'package:bluepad32_client/widgets/system_actions_card.dart';
 import 'package:bluepad32_client/widgets/system_info_card.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
@@ -721,6 +727,172 @@ void main() {
             MacAddress.parse('11:22:33:44:55:66'),
           ]),
         );
+      },
+    );
+
+    testWidgets(
+      '11. DeviceScreen renders PasswordAuthCard when locked (AC0E == required), handles wrong password error, and reveals dashboard cards upon unlock',
+      (WidgetTester tester) async {
+        final FakeBluepad32GattTransport transport = FakeBluepad32GattTransport(
+          serviceName: 'Bluepad32 rc car',
+          password: '1234',
+          firmwareVersion: 'v4.3.0',
+        );
+        final Bluepad32Client client = Bluepad32Client.test(
+          transport: transport,
+          initialState: const Bluepad32State(isConnected: false),
+        );
+        addTearDown(client.dispose);
+
+        await tester.pumpWidget(
+          _wrapWithMaterial3(
+            DeviceScreen(
+              client: client,
+              autoConnect: true,
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // 1. Verify locked state UI: AppBar and SystemInfoCard display 'Bluepad32 rc car' and locked badge.
+        expect(find.text('Bluepad32 rc car'), findsNWidgets(2));
+        expect(find.byKey(const Key('appbar_auth_badge')), findsOneWidget);
+        expect(find.byKey(const Key('system_info_auth_badge')), findsOneWidget);
+        expect(find.byType(PasswordAuthCard), findsOneWidget);
+
+        // Protected dashboard cards are hidden while locked.
+        expect(find.byType(ConnectedControllersCard), findsNothing);
+        expect(find.byType(SettingsTogglesCard), findsNothing);
+        expect(find.byType(AllowlistCard), findsNothing);
+        expect(find.byType(MappingsCard), findsNothing);
+        expect(find.byType(SystemActionsCard), findsNothing);
+
+        // 2. Toggle password visibility icon button and verify obscureText toggles.
+        final Finder passwordFieldFinder = find.byKey(
+          const Key('password_auth_text_field'),
+        );
+        final Finder visibilityBtn = find.byKey(
+          const Key('toggle_password_visibility_button'),
+        );
+        expect(
+          tester.widget<TextField>(passwordFieldFinder).obscureText,
+          isTrue,
+        );
+        await tester.tap(visibilityBtn);
+        await tester.pump();
+        expect(
+          tester.widget<TextField>(passwordFieldFinder).obscureText,
+          isFalse,
+        );
+        await tester.tap(visibilityBtn);
+        await tester.pump();
+        expect(
+          tester.widget<TextField>(passwordFieldFinder).obscureText,
+          isTrue,
+        );
+
+        // 3. Enter wrong password '9999' and tap Unlock -> error banner shown, PasswordAuthCard stays visible.
+        await tester.enterText(passwordFieldFinder, '9999');
+        await tester.tap(find.byKey(const Key('unlock_service_button')));
+        await tester.pumpAndSettle();
+
+        expect(find.byKey(const Key('dashboard_error_banner')), findsOneWidget);
+        expect(find.textContaining('Authentication failed:'), findsOneWidget);
+        expect(find.byType(PasswordAuthCard), findsOneWidget);
+        expect(find.byType(ConnectedControllersCard), findsNothing);
+
+        // 4. Enter correct password '1234' and tap Unlock -> PasswordAuthCard disappears and all dashboard cards appear.
+        await tester.enterText(passwordFieldFinder, '1234');
+        await tester.tap(find.byKey(const Key('unlock_service_button')));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(PasswordAuthCard), findsNothing);
+        expect(find.byKey(const Key('dashboard_error_banner')), findsNothing);
+        expect(find.text('Authenticated'), findsOneWidget);
+        expect(find.byType(ConnectedControllersCard), findsOneWidget);
+        expect(find.byType(SettingsTogglesCard), findsOneWidget);
+        expect(find.byType(AllowlistCard), findsOneWidget);
+        expect(find.byType(MappingsCard), findsOneWidget);
+        expect(find.byType(SystemActionsCard), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      '12. SystemInfoCard displays custom serviceName (AC0D) and supports inline Edit Service Name dialog with validation',
+      (WidgetTester tester) async {
+        final FakeBluepad32GattTransport transport = FakeBluepad32GattTransport(
+          serviceName: 'Bluepad32 rc car',
+        );
+        final Bluepad32Client client = Bluepad32Client.test(
+          transport: transport,
+          initialState: const Bluepad32State(isConnected: false),
+        );
+        addTearDown(client.dispose);
+
+        await tester.pumpWidget(
+          _wrapWithMaterial3(
+            DeviceScreen(
+              client: client,
+              autoConnect: true,
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Service Name'), findsOneWidget);
+        expect(find.text('Bluepad32 rc car'), findsNWidgets(2));
+
+        // 1. Tap Edit Service Name button -> dialog opens with 'Bluepad32 rc car' pre-filled.
+        final Finder editButton = find.byKey(
+          const Key('edit_service_name_button'),
+        );
+        expect(editButton, findsOneWidget);
+        await tester.tap(editButton);
+        await tester.pumpAndSettle();
+
+        expect(find.text('Rename Bluepad32 Service'), findsOneWidget);
+        final Finder nameFieldFinder = find.byKey(
+          const Key('service_name_text_field'),
+        );
+        expect(
+          tester.widget<TextField>(nameFieldFinder).controller?.text,
+          equals('Bluepad32 rc car'),
+        );
+
+        final Finder saveButton = find.byKey(
+          const Key('confirm_rename_service_button'),
+        );
+
+        // 2. Empty string '' is rejected by dialog validation without writing to AC0D.
+        await tester.enterText(nameFieldFinder, '   ');
+        await tester.tap(saveButton);
+        await tester.pumpAndSettle();
+        expect(find.text('Service name cannot be empty.'), findsOneWidget);
+        expect(transport.writesFor(Bluepad32Uuids.serviceName), isEmpty);
+
+        // 3. 30-byte string is rejected by dialog validation without writing to AC0D.
+        await tester.enterText(
+          nameFieldFinder,
+          '123456789012345678901234567890',
+        );
+        await tester.tap(saveButton);
+        await tester.pumpAndSettle();
+        expect(
+          find.text('Service name must be 29 UTF-8 bytes or fewer.'),
+          findsOneWidget,
+        );
+        expect(transport.writesFor(Bluepad32Uuids.serviceName), isEmpty);
+
+        // 4. Enter 'Bluepad32 on esp32' and tap Save -> writes AC0D and updates AppBar and SystemInfoCard.
+        await tester.enterText(nameFieldFinder, 'Bluepad32 on esp32');
+        await tester.tap(saveButton);
+        await tester.pumpAndSettle();
+
+        expect(
+          transport.lastWriteFor(Bluepad32Uuids.serviceName),
+          equals(Uint8List.fromList(utf8.encode('Bluepad32 on esp32'))),
+        );
+        expect(find.text('Bluepad32 on esp32'), findsNWidgets(2));
       },
     );
   });

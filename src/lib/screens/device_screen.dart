@@ -72,10 +72,16 @@ class _DeviceScreenState extends State<DeviceScreen> {
     super.dispose();
   }
 
+  /// Resolves the dashboard title, preferring the live `AC0D` [Bluepad32State.serviceName]
+  /// over the OS-cached [BluetoothDevice.platformName] and falling back to
+  /// `'Bluepad32 Dashboard'`.
   String get _deviceTitle {
+    if (_client.state.serviceName.isNotEmpty) {
+      return _client.state.serviceName;
+    }
     final BluetoothDevice? dev = widget.device ?? _client.device;
-    if (dev != null && dev.platformName.isNotEmpty) {
-      return dev.platformName;
+    if (dev != null && dev.platformName.trim().isNotEmpty) {
+      return dev.platformName.trim();
     }
     return 'Bluepad32 Dashboard';
   }
@@ -183,10 +189,39 @@ class _DeviceScreenState extends State<DeviceScreen> {
         builder: (BuildContext context, Widget? _) {
           final Bluepad32State state = _client.state;
           final bool interactive = state.isConnected && !state.isConnecting;
+          final ColorScheme colorScheme = Theme.of(context).colorScheme;
 
           return Scaffold(
             appBar: AppBar(
-              title: Text(_deviceTitle),
+              title: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Flexible(
+                    child: Text(
+                      _deviceTitle,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  if (state.isPasswordProtected) ...<Widget>[
+                    const SizedBox(width: 8),
+                    Tooltip(
+                      message: state.requiresAuthentication
+                          ? 'Locked (Password Required)'
+                          : 'Authenticated',
+                      child: Icon(
+                        state.requiresAuthentication
+                            ? Icons.lock_outline
+                            : Icons.verified_user_outlined,
+                        key: const Key('appbar_auth_badge'),
+                        size: 18,
+                        color: state.requiresAuthentication
+                            ? colorScheme.error
+                            : colorScheme.primary,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
               actions: <Widget>[
                 _buildConnectionActionButton(context, state),
               ],
@@ -206,46 +241,57 @@ class _DeviceScreenState extends State<DeviceScreen> {
                       deviceName: _deviceTitle,
                       remoteId: _remoteId,
                       onRefresh: _client.refreshAll,
+                      onRenameService: _client.setServiceName,
                     ),
                     const SizedBox(height: 12),
-                    ConnectedControllersCard(
-                      controllers: state.controllers,
-                      maxConnections: state.maxConnections,
-                      enabled: interactive,
-                      onDisconnect: _client.disconnectController,
-                    ),
-                    const SizedBox(height: 12),
-                    SettingsTogglesCard(
-                      bleEnabled: state.bleEnabled,
-                      scanningEnabled: state.scanningEnabled,
-                      allowlistEnabled: state.allowlistEnabled,
-                      enabled: interactive,
-                      onBleEnabledChanged: _client.setBleEnabled,
-                      onScanningChanged: _client.setControllerScanning,
-                      onAllowlistEnabledChanged: _client.setAllowlistEnabled,
-                    ),
-                    const SizedBox(height: 12),
-                    AllowlistCard(
-                      addresses: state.allowlistAddresses,
-                      allowlistEnabled: state.allowlistEnabled,
-                      enabled: interactive,
-                      onAddAddress: _client.addAllowlistAddress,
-                      onRemoveAddress: _client.removeAllowlistAddress,
-                    ),
-                    const SizedBox(height: 12),
-                    MappingsCard(
-                      virtualDevicesEnabled: state.virtualDevicesEnabled,
-                      mappings: state.mappings,
-                      enabled: interactive,
-                      onVirtualDevicesChanged: _client.setVirtualDevicesEnabled,
-                      onMappingsTypeChanged: _client.setMappingsType,
-                    ),
-                    const SizedBox(height: 12),
-                    SystemActionsCard(
-                      enabled: interactive,
-                      onDeleteBondKeys: _client.deleteStoredBondKeys,
-                      onResetDevice: _client.resetDevice,
-                    ),
+                    if (state.requiresAuthentication)
+                      PasswordAuthCard(
+                        key: const Key('password_auth_card'),
+                        enabled: interactive,
+                        errorMessage: state.errorMessage,
+                        onAuthenticate: _client.authenticate,
+                      )
+                    else ...<Widget>[
+                      ConnectedControllersCard(
+                        controllers: state.controllers,
+                        maxConnections: state.maxConnections,
+                        enabled: interactive,
+                        onDisconnect: _client.disconnectController,
+                      ),
+                      const SizedBox(height: 12),
+                      SettingsTogglesCard(
+                        bleEnabled: state.bleEnabled,
+                        scanningEnabled: state.scanningEnabled,
+                        allowlistEnabled: state.allowlistEnabled,
+                        enabled: interactive,
+                        onBleEnabledChanged: _client.setBleEnabled,
+                        onScanningChanged: _client.setControllerScanning,
+                        onAllowlistEnabledChanged: _client.setAllowlistEnabled,
+                      ),
+                      const SizedBox(height: 12),
+                      AllowlistCard(
+                        addresses: state.allowlistAddresses,
+                        allowlistEnabled: state.allowlistEnabled,
+                        enabled: interactive,
+                        onAddAddress: _client.addAllowlistAddress,
+                        onRemoveAddress: _client.removeAllowlistAddress,
+                      ),
+                      const SizedBox(height: 12),
+                      MappingsCard(
+                        virtualDevicesEnabled: state.virtualDevicesEnabled,
+                        mappings: state.mappings,
+                        enabled: interactive,
+                        onVirtualDevicesChanged:
+                            _client.setVirtualDevicesEnabled,
+                        onMappingsTypeChanged: _client.setMappingsType,
+                      ),
+                      const SizedBox(height: 12),
+                      SystemActionsCard(
+                        enabled: interactive,
+                        onDeleteBondKeys: _client.deleteStoredBondKeys,
+                        onResetDevice: _client.resetDevice,
+                      ),
+                    ],
                     const SizedBox(height: 24),
                   ],
                 ),
@@ -253,6 +299,162 @@ class _DeviceScreenState extends State<DeviceScreen> {
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+/// Material 3 card rendered on [DeviceScreen] when characteristic `AC0E`
+/// reports [Bluepad32AuthStatus.required], prompting the user for the service
+/// password before unlocking telemetry and configuration cards.
+class PasswordAuthCard extends StatefulWidget {
+  /// Whether the peripheral is connected and ready to accept password writes.
+  final bool enabled;
+
+  /// Optional active authentication error message.
+  final String? errorMessage;
+
+  /// Callback that submits the entered password to `AC0E`.
+  final Future<bool> Function(String password) onAuthenticate;
+
+  /// Creates a [PasswordAuthCard].
+  const PasswordAuthCard({
+    super.key,
+    required this.enabled,
+    required this.onAuthenticate,
+    this.errorMessage,
+  });
+
+  @override
+  State<PasswordAuthCard> createState() => _PasswordAuthCardState();
+}
+
+class _PasswordAuthCardState extends State<PasswordAuthCard> {
+  final TextEditingController _passwordController = TextEditingController();
+  bool _obscurePassword = true;
+  bool _isSubmitting = false;
+
+  @override
+  void dispose() {
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (!widget.enabled || _isSubmitting) {
+      return;
+    }
+    setState(() {
+      _isSubmitting = true;
+    });
+    try {
+      await widget.onAuthenticate(_passwordController.text);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSubmitting = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme colorScheme = theme.colorScheme;
+
+    return Card(
+      elevation: 0,
+      color: colorScheme.surfaceContainerLow,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: colorScheme.outlineVariant.withValues(alpha: 0.6),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                Icon(
+                  Icons.lock_outline,
+                  color: colorScheme.primary,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Password Authentication Required',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'This Bluepad32 BLE service is protected by a password. '
+              'Enter the service password to unlock controller telemetry and settings.',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Expanded(
+                  child: TextField(
+                    key: const Key('password_auth_text_field'),
+                    controller: _passwordController,
+                    enabled: widget.enabled && !_isSubmitting,
+                    obscureText: _obscurePassword,
+                    textInputAction: TextInputAction.done,
+                    onSubmitted: (_) => _submit(),
+                    decoration: InputDecoration(
+                      labelText: 'Service Password',
+                      hintText: 'Enter password (1–31 bytes)',
+                      border: const OutlineInputBorder(),
+                      isDense: true,
+                      suffixIcon: IconButton(
+                        key: const Key('toggle_password_visibility_button'),
+                        tooltip: _obscurePassword
+                            ? 'Show password'
+                            : 'Hide password',
+                        onPressed: () {
+                          setState(() {
+                            _obscurePassword = !_obscurePassword;
+                          });
+                        },
+                        icon: Icon(
+                          _obscurePassword
+                              ? Icons.visibility_outlined
+                              : Icons.visibility_off_outlined,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                FilledButton.icon(
+                  key: const Key('unlock_service_button'),
+                  onPressed: widget.enabled && !_isSubmitting ? _submit : null,
+                  icon: _isSubmitting
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.lock_open, size: 18),
+                  label: const Text('Unlock'),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

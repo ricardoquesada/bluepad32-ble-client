@@ -2,9 +2,11 @@
 /// BLE peripherals.
 ///
 /// Coordinates connection establishment, MTU negotiation, GATT service
-/// discovery, `AC05` notification streaming, and typed reads/writes across
-/// characteristics `AC01`–`AC0C`, while providing [FakeBluepad32GattTransport]
-/// for deterministic headless unit and widget testing.
+/// discovery, two-phase `AC0E` password authentication probing (`AC01`/`AC0D`/`AC0E`
+/// public reads before `AC05` CCCD subscription and `AC02`–`AC09` protected reads),
+/// `AC05` notification streaming, and typed reads/writes across characteristics
+/// `AC01`–`AC0E`, while providing [FakeBluepad32GattTransport] for deterministic
+/// headless unit and widget testing.
 library;
 
 import 'dart:async';
@@ -34,9 +36,13 @@ abstract class Bluepad32GattTransport {
   Stream<List<int>> get connectedDevicesNotificationStream;
 
   /// Connects to the peripheral (negotiating MTU), discovers the Bluepad32 GATT
-  /// service (`4627c4a4-ac00-46b9-b688-afc5c1bf7f63`), locates characteristics
-  /// `AC01`–`AC0C`, and enables notifications on `AC05`.
+  /// service (`4627c4a4-ac00-46b9-b688-afc5c1bf7f63`), and locates characteristics
+  /// `AC01`–`AC0E` without writing to the `AC05` CCCD yet.
   Future<void> connectAndDiscover();
+
+  /// Subscribes to `AC05` (`connectedDevices`) notifications after verifying
+  /// that the session is either open (`AC0E == 0`) or authenticated (`AC0E == 2`).
+  Future<void> enableNotifications();
 
   /// Disconnects from the peripheral and cancels active GATT subscriptions.
   Future<void> disconnect();
@@ -50,6 +56,9 @@ abstract class Bluepad32GattTransport {
   /// Releases any internal stream controllers or subscriptions.
   void dispose();
 }
+
+/// Alias for the production `flutter_blue_plus` GATT transport implementation.
+typedef FlutterBluePlusGattTransport = _DeviceBluepad32GattTransport;
 
 /// Production [Bluepad32GattTransport] backed by a `flutter_blue_plus` [BluetoothDevice].
 class _DeviceBluepad32GattTransport implements Bluepad32GattTransport {
@@ -90,18 +99,24 @@ class _DeviceBluepad32GattTransport implements Bluepad32GattTransport {
       );
     }
 
-    // 3. Index characteristics AC01..AC0C by UUID.
+    // 3. Index characteristics AC01..AC0E by UUID.
     _characteristics.clear();
     for (final BluetoothCharacteristic characteristic
         in bluepadService.characteristics) {
       _characteristics[characteristic.uuid] = characteristic;
     }
 
-    // 4. Subscribe to AC05 (connectedDevices) via onValueReceived to avoid
-    // the initial empty `[]` emission from lastValueStream.
+    // 4. Cancel any stale AC05 subscription; enableNotifications() will subscribe
+    // once AC0E auth status is confirmed open or authenticated.
     await _ac05Subscription?.cancel();
     _ac05Subscription = null;
+  }
 
+  @override
+  Future<void> enableNotifications() async {
+    if (_ac05Subscription != null) {
+      return;
+    }
     final BluetoothCharacteristic? connectedDevicesChar =
         _characteristics[Bluepad32Uuids.connectedDevices];
     if (connectedDevicesChar != null) {
@@ -154,8 +169,15 @@ class _DeviceBluepad32GattTransport implements Bluepad32GattTransport {
 /// In-memory fake [Bluepad32GattTransport] for unit and widget tests.
 ///
 /// Records all GATT writes and allows tests to seed characteristic read responses,
-/// push `AC05` notifications, and simulate disconnection or write exceptions.
+/// push `AC05` notifications, and simulate disconnection, password protection (`AC0E`),
+/// or write exceptions.
 class FakeBluepad32GattTransport implements Bluepad32GattTransport {
+  static final Set<Guid> _publicReadCharacteristics = <Guid>{
+    Bluepad32Uuids.version,
+    Bluepad32Uuids.serviceName,
+    Bluepad32Uuids.serviceAuth,
+  };
+
   final Map<Guid, List<int>> _characteristicValues = <Guid, List<int>>{};
   final Map<Guid, List<Uint8List>> _writeLog = <Guid, List<Uint8List>>{};
   final Map<Guid, Object Function()> _readThrowers =
@@ -168,8 +190,17 @@ class FakeBluepad32GattTransport implements Bluepad32GattTransport {
   final StreamController<List<int>> _notificationController =
       StreamController<List<int>>.broadcast();
 
+  String? _password;
+  Bluepad32AuthStatus _authStatus = Bluepad32AuthStatus.open;
+
   /// Number of times [connectAndDiscover] was invoked.
   int connectCallCount = 0;
+
+  /// Number of times [enableNotifications] was invoked.
+  int enableNotificationsCallCount = 0;
+
+  /// Whether `AC05` notifications are currently enabled on this transport.
+  bool notificationsEnabled = false;
 
   /// Number of times [disconnect] was invoked.
   int disconnectCallCount = 0;
@@ -185,8 +216,13 @@ class FakeBluepad32GattTransport implements Bluepad32GattTransport {
 
   /// Creates an in-memory GATT transport pre-populated with default Bluepad32
   /// characteristic payloads.
+  ///
+  /// Note: [serviceName] defaults to `''` so tests that do not specify a custom
+  /// `AC0D` service name fall back to `device.platformName`.
   FakeBluepad32GattTransport({
     String firmwareVersion = 'v4.2.0',
+    String serviceName = '',
+    String? password,
     int maxConnections = 4,
     bool bleEnabled = true,
     bool scanningEnabled = false,
@@ -195,10 +231,22 @@ class FakeBluepad32GattTransport implements Bluepad32GattTransport {
     bool allowlistEnabled = false,
     List<MacAddress> allowlistAddresses = const <MacAddress>[],
     bool virtualDevicesEnabled = true,
-  }) {
+  }) : _password = (password != null && password.isNotEmpty) ? password : null {
+    _authStatus = _password != null
+        ? Bluepad32AuthStatus.required
+        : Bluepad32AuthStatus.open;
+
     setCharacteristicValue(
       Bluepad32Uuids.version,
       utf8.encode(firmwareVersion),
+    );
+    setCharacteristicValue(
+      Bluepad32Uuids.serviceName,
+      utf8.encode(serviceName),
+    );
+    setCharacteristicValue(
+      Bluepad32Uuids.serviceAuth,
+      <int>[_authStatus.value],
     );
     setCharacteristicValue(
       Bluepad32Uuids.maxConnections,
@@ -244,9 +292,29 @@ class FakeBluepad32GattTransport implements Bluepad32GattTransport {
     );
   }
 
+  /// Current simulated `AC0E` authentication status on the peripheral.
+  Bluepad32AuthStatus get authStatus => _authStatus;
+
+  /// Updates the simulated peripheral password at runtime (re-locking the
+  /// session when non-empty, or opening access when `null` or empty).
+  void setPassword(String? password) {
+    _password = (password != null && password.isNotEmpty) ? password : null;
+    if (_password != null) {
+      _authStatus = Bluepad32AuthStatus.required;
+      notificationsEnabled = false;
+    } else {
+      _authStatus = Bluepad32AuthStatus.open;
+    }
+    _characteristicValues[Bluepad32Uuids.serviceAuth] =
+        Uint8List.fromList(<int>[_authStatus.value]);
+  }
+
   /// Sets the bytes returned when [uuid] is read.
   void setCharacteristicValue(Guid uuid, List<int> bytes) {
     _characteristicValues[uuid] = Uint8List.fromList(bytes);
+    if (uuid == Bluepad32Uuids.serviceAuth) {
+      _authStatus = Bluepad32AuthStatus.fromBytes(bytes);
+    }
   }
 
   /// Configures [readCharacteristic] for [uuid] to throw the exception returned
@@ -310,12 +378,38 @@ class FakeBluepad32GattTransport implements Bluepad32GattTransport {
     if (connectError != null) {
       throw connectError!;
     }
+    notificationsEnabled = false;
+    if (_password != null) {
+      _authStatus = Bluepad32AuthStatus.required;
+      _characteristicValues[Bluepad32Uuids.serviceAuth] =
+          Uint8List.fromList(<int>[Bluepad32AuthStatus.required.value]);
+    }
     emitConnectionState(BluetoothConnectionState.connected);
+  }
+
+  @override
+  Future<void> enableNotifications() async {
+    if (_authStatus == Bluepad32AuthStatus.required) {
+      throw FlutterBluePlusException(
+        ErrorPlatform.fbp,
+        'setNotifyValue',
+        0x05,
+        'ATT_ERROR_INSUFFICIENT_AUTHENTICATION (0x05)',
+      );
+    }
+    enableNotificationsCallCount++;
+    notificationsEnabled = true;
   }
 
   @override
   Future<void> disconnect() async {
     disconnectCallCount++;
+    notificationsEnabled = false;
+    if (_password != null) {
+      _authStatus = Bluepad32AuthStatus.required;
+      _characteristicValues[Bluepad32Uuids.serviceAuth] =
+          Uint8List.fromList(<int>[Bluepad32AuthStatus.required.value]);
+    }
     if (disconnectError != null) {
       throw disconnectError!;
     }
@@ -329,6 +423,15 @@ class FakeBluepad32GattTransport implements Bluepad32GattTransport {
     if (thrower != null) {
       throw thrower();
     }
+    if (_authStatus == Bluepad32AuthStatus.required &&
+        !_publicReadCharacteristics.contains(uuid)) {
+      throw FlutterBluePlusException(
+        ErrorPlatform.fbp,
+        'readCharacteristic',
+        0x05,
+        'ATT_ERROR_INSUFFICIENT_AUTHENTICATION (0x05)',
+      );
+    }
     return Uint8List.fromList(_characteristicValues[uuid] ?? const <int>[]);
   }
 
@@ -336,12 +439,64 @@ class FakeBluepad32GattTransport implements Bluepad32GattTransport {
   Future<void> writeCharacteristic(Guid uuid, List<int> value) async {
     final Uint8List payload = Uint8List.fromList(value);
     _writeLog.putIfAbsent(uuid, () => <Uint8List>[]).add(payload);
-    _characteristicValues[uuid] = payload;
 
     final Object Function(List<int> value)? thrower = _writeThrowers[uuid];
     if (thrower != null) {
       throw thrower(payload);
     }
+
+    if (uuid == Bluepad32Uuids.serviceAuth) {
+      if (payload.isEmpty ||
+          payload.length > Bluepad32Client.maxServicePasswordBytes) {
+        throw FlutterBluePlusException(
+          ErrorPlatform.fbp,
+          'writeCharacteristic',
+          0x0d,
+          'ATT_ERROR_INVALID_ATTRIBUTE_VALUE_LENGTH (0x0d)',
+        );
+      }
+      final String submitted = utf8.decode(payload, allowMalformed: true);
+      if (_password == null || _password!.isEmpty) {
+        _authStatus = Bluepad32AuthStatus.open;
+        _characteristicValues[Bluepad32Uuids.serviceAuth] =
+            Uint8List.fromList(<int>[Bluepad32AuthStatus.open.value]);
+        return;
+      }
+      if (submitted == _password) {
+        _authStatus = Bluepad32AuthStatus.authenticated;
+        _characteristicValues[Bluepad32Uuids.serviceAuth] =
+            Uint8List.fromList(<int>[Bluepad32AuthStatus.authenticated.value]);
+        return;
+      }
+      throw FlutterBluePlusException(
+        ErrorPlatform.fbp,
+        'writeCharacteristic',
+        0x05,
+        'ATT_ERROR_INSUFFICIENT_AUTHENTICATION (0x05): Invalid password',
+      );
+    }
+
+    if (_authStatus == Bluepad32AuthStatus.required) {
+      throw FlutterBluePlusException(
+        ErrorPlatform.fbp,
+        'writeCharacteristic',
+        0x05,
+        'ATT_ERROR_INSUFFICIENT_AUTHENTICATION (0x05)',
+      );
+    }
+
+    if (uuid == Bluepad32Uuids.serviceName &&
+        (payload.isEmpty ||
+            payload.length > Bluepad32Client.maxServiceNameBytes)) {
+      throw FlutterBluePlusException(
+        ErrorPlatform.fbp,
+        'writeCharacteristic',
+        0x0d,
+        'ATT_ERROR_INVALID_ATTRIBUTE_VALUE_LENGTH (0x0d)',
+      );
+    }
+
+    _characteristicValues[uuid] = payload;
   }
 
   @override
@@ -354,6 +509,12 @@ class FakeBluepad32GattTransport implements Bluepad32GattTransport {
 /// Service layer managing BLE GATT communication and reactive state for a
 /// Bluepad32 peripheral.
 class Bluepad32Client extends ChangeNotifier {
+  /// Maximum UTF-8 byte length for the BLE service name (`AC0D`, `UNI_BT_SERVICE_NAME_MAX_LEN`).
+  static const int maxServiceNameBytes = 29;
+
+  /// Maximum UTF-8 byte length for the BLE service password (`AC0E`, `UNI_BT_SERVICE_PASSWORD_MAX_LEN`).
+  static const int maxServicePasswordBytes = 31;
+
   /// Underlying `flutter_blue_plus` device when running on a physical peripheral,
   /// or `null` in headless unit/widget tests.
   final BluetoothDevice? device;
@@ -437,8 +598,21 @@ class Bluepad32Client extends ChangeNotifier {
     }
   }
 
-  /// Connects to the Bluepad32 peripheral, negotiates MTU, discovers `AC01`–`AC0C`,
-  /// subscribes to `AC05` notifications, and hydrates all state via [refreshAll].
+  /// Reads an optional characteristic (`AC0D` or `AC0E`), returning `const <int>[]`
+  /// if the characteristic is absent on legacy firmware.
+  Future<List<int>> _readOptionalCharacteristic(Guid uuid) async {
+    try {
+      return await _transport.readCharacteristic(uuid);
+    } on StateError catch (e) {
+      if (e.message.contains('is not available')) {
+        return const <int>[];
+      }
+      rethrow;
+    }
+  }
+
+  /// Connects to the Bluepad32 peripheral, negotiates MTU, discovers `AC01`–`AC0E`,
+  /// checks `AC0E` authentication status, and hydrates state via [refreshAll].
   Future<void> connect() async {
     _updateState(
       _state.copyWith(
@@ -494,7 +668,11 @@ class Bluepad32Client extends ChangeNotifier {
     );
   }
 
-  /// Sequentially reads characteristics `AC01` through `AC09` and updates [state].
+  /// Reads public characteristics (`AC01`, `AC0D`, `AC0E`) first; if the
+  /// peripheral is locked ([Bluepad32AuthStatus.required]), updates [state] and
+  /// returns early without touching protected characteristics `AC02`–`AC09` or
+  /// enabling `AC05` notifications. When open or authenticated, enables `AC05`
+  /// notifications and reads `AC02` through `AC09`.
   Future<void> refreshAll() async {
     _updateState(
       _state.copyWith(
@@ -504,13 +682,45 @@ class Bluepad32Client extends ChangeNotifier {
     );
 
     try {
-      // AC01: Firmware Version (UTF-8 string)
+      // 1. Read public identity & auth gate characteristics (AC01, AC0D, AC0E).
       final List<int> versionBytes =
           await _transport.readCharacteristic(Bluepad32Uuids.version);
       final String version = utf8
           .decode(versionBytes, allowMalformed: true)
           .replaceAll('\x00', '')
           .trim();
+
+      final List<int> serviceNameBytes =
+          await _readOptionalCharacteristic(Bluepad32Uuids.serviceName);
+      final String serviceName = utf8
+          .decode(serviceNameBytes, allowMalformed: true)
+          .replaceAll('\x00', '')
+          .trim();
+
+      final List<int> authBytes =
+          await _readOptionalCharacteristic(Bluepad32Uuids.serviceAuth);
+      final Bluepad32AuthStatus authStatus =
+          Bluepad32AuthStatus.fromBytes(authBytes);
+
+      // 2. If locked, update public fields and return early before AC05 CCCD or AC02..AC09.
+      if (authStatus == Bluepad32AuthStatus.required) {
+        _updateState(
+          _state.copyWith(
+            isConnecting: false,
+            isRefreshing: false,
+            isConnected: true,
+            clearError: true,
+            firmwareVersion: version.isEmpty ? 'Unknown' : version,
+            serviceName:
+                serviceName.isNotEmpty ? serviceName : _state.serviceName,
+            authStatus: Bluepad32AuthStatus.required,
+          ),
+        );
+        return;
+      }
+
+      // 3. Session is open or authenticated: enable AC05 notifications and read AC02..AC09.
+      await _transport.enableNotifications();
 
       // AC02: Max Supported Connections (uint8_t)
       final List<int> maxConnBytes =
@@ -568,6 +778,9 @@ class Bluepad32Client extends ChangeNotifier {
           isConnected: true,
           clearError: true,
           firmwareVersion: version.isEmpty ? 'Unknown' : version,
+          serviceName:
+              serviceName.isNotEmpty ? serviceName : _state.serviceName,
+          authStatus: authStatus,
           maxConnections: maxConnections,
           bleEnabled: bleEnabled,
           scanningEnabled: scanningEnabled,
@@ -583,6 +796,126 @@ class Bluepad32Client extends ChangeNotifier {
         _state.copyWith(
           isRefreshing: false,
           errorMessage: 'Failed to read Bluepad32 state: ${_formatError(e)}',
+        ),
+      );
+    }
+  }
+
+  /// Submits [password] to `AC0E` (`serviceAuth`) to unlock a password-protected
+  /// Bluepad32 BLE service session.
+  ///
+  /// When authentication succeeds, enables `AC05` notifications, hydrates all
+  /// protected characteristics via [refreshAll], and returns `true`. On invalid
+  /// password or ATT error, sets [Bluepad32State.errorMessage] and returns `false`.
+  Future<bool> authenticate(String password) async {
+    if (password.isEmpty) {
+      _updateState(
+        _state.copyWith(
+          errorMessage: 'Password cannot be empty.',
+        ),
+      );
+      return false;
+    }
+
+    final List<int> passwordBytes = utf8.encode(password);
+    if (passwordBytes.length > maxServicePasswordBytes) {
+      _updateState(
+        _state.copyWith(
+          errorMessage:
+              'Password must be $maxServicePasswordBytes UTF-8 bytes or fewer.',
+        ),
+      );
+      return false;
+    }
+
+    try {
+      await _transport.writeCharacteristic(
+        Bluepad32Uuids.serviceAuth,
+        passwordBytes,
+      );
+      final List<int> authBytes =
+          await _readOptionalCharacteristic(Bluepad32Uuids.serviceAuth);
+      final Bluepad32AuthStatus status = authBytes.isEmpty
+          ? Bluepad32AuthStatus.authenticated
+          : Bluepad32AuthStatus.fromBytes(authBytes);
+
+      if (status == Bluepad32AuthStatus.required) {
+        _updateState(
+          _state.copyWith(
+            authStatus: Bluepad32AuthStatus.required,
+            errorMessage: 'Authentication failed: invalid password.',
+          ),
+        );
+        return false;
+      }
+
+      _updateState(
+        _state.copyWith(
+          authStatus: status,
+          clearError: true,
+        ),
+      );
+      await _transport.enableNotifications();
+      await refreshAll();
+      return true;
+    } catch (e) {
+      _updateState(
+        _state.copyWith(
+          errorMessage: 'Authentication failed: ${_formatError(e)}',
+        ),
+      );
+      return false;
+    }
+  }
+
+  /// Updates the advertised BLE service name on the peripheral (`AC0D`).
+  ///
+  /// Validates that the trimmed UTF-8 representation of [name] is between `1`
+  /// and [maxServiceNameBytes] (`29`) bytes before writing to `AC0D`, re-reading
+  /// `AC0D`, and updating [Bluepad32State.serviceName].
+  Future<void> setServiceName(String name) async {
+    final String trimmed = name.trim();
+    if (trimmed.isEmpty) {
+      _updateState(
+        _state.copyWith(
+          errorMessage: 'Service name cannot be empty.',
+        ),
+      );
+      return;
+    }
+
+    final List<int> nameBytes = utf8.encode(trimmed);
+    if (nameBytes.length > maxServiceNameBytes) {
+      _updateState(
+        _state.copyWith(
+          errorMessage:
+              'Service name must be $maxServiceNameBytes UTF-8 bytes or fewer.',
+        ),
+      );
+      return;
+    }
+
+    try {
+      await _transport.writeCharacteristic(
+        Bluepad32Uuids.serviceName,
+        nameBytes,
+      );
+      final List<int> echoedBytes =
+          await _readOptionalCharacteristic(Bluepad32Uuids.serviceName);
+      final String echoedName = utf8
+          .decode(echoedBytes, allowMalformed: true)
+          .replaceAll('\x00', '')
+          .trim();
+      _updateState(
+        _state.copyWith(
+          serviceName: echoedName.isNotEmpty ? echoedName : trimmed,
+          clearError: true,
+        ),
+      );
+    } catch (e) {
+      _updateState(
+        _state.copyWith(
+          errorMessage: 'Failed to update service name: ${_formatError(e)}',
         ),
       );
     }

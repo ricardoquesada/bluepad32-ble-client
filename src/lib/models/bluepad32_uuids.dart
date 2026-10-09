@@ -6,9 +6,15 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 /// (`src/components/bluepad32/bt/uni_bt_service.gatt`).
 ///
 /// The primary service uses base UUID `4627c4a4-ac00-46b9-b688-afc5c1bf7f63`
-/// with characteristics numbered contiguously from `AC01` through `AC0C`.
-/// Characteristic `AC05` unifies both on-demand full-table reads and reactive
-/// change notifications over a single GATT handle.
+/// with 14 characteristics numbered contiguously from `AC01` through `AC0E`:
+/// - `AC05` ([connectedDevices]) unifies both on-demand full-table reads and
+///   reactive change notifications over a single GATT handle.
+/// - `AC0D` ([serviceName]) exposes the custom UTF-8 BLE service name (`1..29`
+///   bytes, fitting inside the 31-byte `SCAN_RSP` PDU alongside the 8-byte
+///   shortened/complete name in `ADV_IND`).
+/// - `AC0E` ([serviceAuth]) enforces per-connection session authentication
+///   (`0 = open`, `1 = password required`, `2 = authenticated`), gating reads
+///   to `AC02`–`AC09`, writes to `AC03`–`AC0D`, and `AC05` CCCD subscriptions.
 abstract final class Bluepad32Uuids {
   /// Primary Bluepad32 GATT Service UUID (`4627C4A4-AC00-46B9-B688-AFC5C1BF7F63`).
   static final Guid service = Guid('4627c4a4-ac00-46b9-b688-afc5c1bf7f63');
@@ -52,6 +58,14 @@ abstract final class Bluepad32Uuids {
   /// `AC0C` (`WRITE | DYNAMIC`): Reboots the Bluepad32 microcontroller when `1` (`uint8_t`) is written.
   static final Guid resetDevice = Guid('4627c4a4-ac0c-46b9-b688-afc5c1bf7f63');
 
+  /// `AC0D` (`READ | WRITE | DYNAMIC`): Custom UTF-8 BLE advertised service name (`1..29` bytes).
+  static final Guid serviceName = Guid('4627c4a4-ac0d-46b9-b688-afc5c1bf7f63');
+
+  /// `AC0E` (`READ | WRITE | DYNAMIC`): Session password authentication gate
+  /// (`READ` returns `uint8_t`: `0=open`, `1=required`, `2=authenticated`;
+  /// `WRITE` submits a `1..31`-byte UTF-8 password).
+  static final Guid serviceAuth = Guid('4627c4a4-ac0e-46b9-b688-afc5c1bf7f63');
+
   /// Short-handle alias for `AC01` ([version]).
   static final Guid ac01 = version;
 
@@ -88,7 +102,13 @@ abstract final class Bluepad32Uuids {
   /// Short-handle alias for `AC0C` ([resetDevice]).
   static final Guid ac0c = resetDevice;
 
-  /// All 12 characteristic UUIDs (`AC01` through `AC0C`) in the Bluepad32 GATT service.
+  /// Short-handle alias for `AC0D` ([serviceName]).
+  static final Guid ac0d = serviceName;
+
+  /// Short-handle alias for `AC0E` ([serviceAuth]).
+  static final Guid ac0e = serviceAuth;
+
+  /// All 14 characteristic UUIDs (`AC01` through `AC0E`) in the Bluepad32 GATT service.
   static final List<Guid> allCharacteristics = List.unmodifiable(<Guid>[
     version,
     maxConnections,
@@ -102,5 +122,7 @@ abstract final class Bluepad32Uuids {
     disconnectDevice,
     deleteStoredKeys,
     resetDevice,
+    serviceName,
+    serviceAuth,
   ]);
 }

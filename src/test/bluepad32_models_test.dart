@@ -26,7 +26,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('Bluepad32Uuids', () {
-    test('defines primary service and contiguous AC01..AC0C characteristics', () {
+    test('defines primary service and contiguous AC01..AC0E characteristics', () {
       expect(
         Bluepad32Uuids.service,
         Guid('4627c4a4-ac00-46b9-b688-afc5c1bf7f63'),
@@ -79,7 +79,15 @@ void main() {
         Bluepad32Uuids.resetDevice,
         Guid('4627c4a4-ac0c-46b9-b688-afc5c1bf7f63'),
       );
-      expect(Bluepad32Uuids.allCharacteristics, hasLength(12));
+      expect(
+        Bluepad32Uuids.serviceName,
+        Guid('4627c4a4-ac0d-46b9-b688-afc5c1bf7f63'),
+      );
+      expect(
+        Bluepad32Uuids.serviceAuth,
+        Guid('4627c4a4-ac0e-46b9-b688-afc5c1bf7f63'),
+      );
+      expect(Bluepad32Uuids.allCharacteristics, hasLength(14));
     });
 
     test('Bluepad32Uuids aliases match primary characteristic UUIDs', () {
@@ -99,6 +107,8 @@ void main() {
       expect(Bluepad32Uuids.ac0a, equals(Bluepad32Uuids.disconnectDevice));
       expect(Bluepad32Uuids.ac0b, equals(Bluepad32Uuids.deleteStoredKeys));
       expect(Bluepad32Uuids.ac0c, equals(Bluepad32Uuids.resetDevice));
+      expect(Bluepad32Uuids.ac0d, equals(Bluepad32Uuids.serviceName));
+      expect(Bluepad32Uuids.ac0e, equals(Bluepad32Uuids.serviceAuth));
     });
   });
 
@@ -808,6 +818,84 @@ void main() {
         isNot(equals(s1.copyWith(allowlistAddresses: const <MacAddress>[]))),
       );
       expect(s1, isNot(equals(s1.copyWith(virtualDevicesEnabled: false))));
+      expect(
+        s1,
+        isNot(equals(s1.copyWith(serviceName: 'Bluepad32 rc car'))),
+      );
+      expect(
+        s1,
+        isNot(
+          equals(
+            s1.copyWith(authStatus: Bluepad32AuthStatus.required),
+          ),
+        ),
+      );
+
+      final Bluepad32State withService = s1.copyWith(
+        serviceName: 'Bluepad32 rc car',
+        authStatus: Bluepad32AuthStatus.required,
+      );
+      expect(withService.serviceName, equals('Bluepad32 rc car'));
+      expect(withService.authStatus, equals(Bluepad32AuthStatus.required));
+      expect(withService.isPasswordProtected, isTrue);
+      expect(withService.requiresAuthentication, isTrue);
+      expect(withService.isAuthenticated, isFalse);
+
+      final Bluepad32State unlocked = withService.copyWith(
+        authStatus: Bluepad32AuthStatus.authenticated,
+      );
+      expect(unlocked.isPasswordProtected, isTrue);
+      expect(unlocked.requiresAuthentication, isFalse);
+      expect(unlocked.isAuthenticated, isTrue);
+
+      final Bluepad32State clearedName = unlocked.copyWith(
+        clearServiceName: true,
+        authStatus: Bluepad32AuthStatus.open,
+      );
+      expect(clearedName.serviceName, isEmpty);
+      expect(clearedName.isPasswordProtected, isFalse);
+      expect(clearedName.requiresAuthentication, isFalse);
+      expect(clearedName.isAuthenticated, isTrue);
+    });
+
+    test('Bluepad32AuthStatus.fromByte and fromBytes decode open, required, authenticated, and fallbacks', () {
+      expect(Bluepad32AuthStatus.open.value, equals(0));
+      expect(Bluepad32AuthStatus.required.value, equals(1));
+      expect(Bluepad32AuthStatus.authenticated.value, equals(2));
+
+      expect(
+        Bluepad32AuthStatus.fromByte(0),
+        equals(Bluepad32AuthStatus.open),
+      );
+      expect(
+        Bluepad32AuthStatus.fromByte(1),
+        equals(Bluepad32AuthStatus.required),
+      );
+      expect(
+        Bluepad32AuthStatus.fromByte(2),
+        equals(Bluepad32AuthStatus.authenticated),
+      );
+      expect(
+        Bluepad32AuthStatus.fromByte(99),
+        equals(Bluepad32AuthStatus.open),
+      );
+
+      expect(
+        Bluepad32AuthStatus.fromBytes(const <int>[]),
+        equals(Bluepad32AuthStatus.open),
+      );
+      expect(
+        Bluepad32AuthStatus.fromBytes(const <int>[0]),
+        equals(Bluepad32AuthStatus.open),
+      );
+      expect(
+        Bluepad32AuthStatus.fromBytes(const <int>[1]),
+        equals(Bluepad32AuthStatus.required),
+      );
+      expect(
+        Bluepad32AuthStatus.fromBytes(const <int>[2]),
+        equals(Bluepad32AuthStatus.authenticated),
+      );
     });
   });
 
@@ -1414,7 +1502,206 @@ void main() {
       expect(client.state.firmwareVersion, isNull);
     });
 
-    test('Bluepad32Client(device: ...) exercises _DeviceBluepad32GattTransport discovery, read/write, notifications, and missing service/characteristic errors', () async {
+    test('open vs password-protected connect(), refreshAll(), and authenticate() lifecycle (AC0D & AC0E)', () async {
+      // 1. Open peripheral (password: null)
+      final FakeBluepad32GattTransport openTransport =
+          FakeBluepad32GattTransport(
+        serviceName: 'Bluepad32 rc car',
+        password: null,
+      );
+      final Bluepad32Client openClient = Bluepad32Client.test(
+        transport: openTransport,
+        initialState: const Bluepad32State(),
+      );
+      addTearDown(openClient.dispose);
+
+      await openClient.connect();
+      expect(openClient.state.isConnected, isTrue);
+      expect(openClient.state.serviceName, equals('Bluepad32 rc car'));
+      expect(openClient.state.authStatus, equals(Bluepad32AuthStatus.open));
+      expect(openClient.state.isAuthenticated, isTrue);
+      expect(openClient.state.requiresAuthentication, isFalse);
+      expect(openClient.state.isPasswordProtected, isFalse);
+      expect(openTransport.notificationsEnabled, isTrue);
+      expect(openTransport.readCounts[Bluepad32Uuids.maxConnections], equals(1));
+
+      // 2. Password-locked peripheral (password: '1234')
+      final FakeBluepad32GattTransport lockedTransport =
+          FakeBluepad32GattTransport(
+        serviceName: 'Bluepad32 on esp32',
+        password: '1234',
+        maxConnections: 4,
+        bleEnabled: true,
+      );
+      final Bluepad32Client lockedClient = Bluepad32Client.test(
+        transport: lockedTransport,
+        initialState: const Bluepad32State(),
+      );
+      addTearDown(lockedClient.dispose);
+
+      await lockedClient.connect();
+      expect(lockedClient.state.isConnected, isTrue);
+      expect(lockedClient.state.serviceName, equals('Bluepad32 on esp32'));
+      expect(lockedClient.state.firmwareVersion, equals('v4.2.0'));
+      expect(
+        lockedClient.state.authStatus,
+        equals(Bluepad32AuthStatus.required),
+      );
+      expect(lockedClient.state.requiresAuthentication, isTrue);
+      expect(lockedClient.state.isPasswordProtected, isTrue);
+      expect(lockedClient.state.isAuthenticated, isFalse);
+      expect(lockedClient.state.errorMessage, isNull);
+
+      // Verify AC02..AC09 were NOT read during connect() and AC05 notifications were not enabled yet.
+      expect(lockedTransport.notificationsEnabled, isFalse);
+      expect(lockedTransport.readCounts[Bluepad32Uuids.maxConnections], isNull);
+      expect(lockedTransport.readCounts[Bluepad32Uuids.bleEnabled], isNull);
+      expect(
+        lockedTransport.readCounts[Bluepad32Uuids.connectedDevices],
+        isNull,
+      );
+
+      // Calling refreshAll() while locked refreshes AC01, AC0D, AC0E and returns cleanly without reading AC02..AC09.
+      await lockedClient.refreshAll();
+      expect(lockedClient.state.errorMessage, isNull);
+      expect(lockedTransport.readCounts[Bluepad32Uuids.maxConnections], isNull);
+
+      // 3. Failed authenticate() attempts: empty, >31 UTF-8 bytes, and wrong password.
+      expect(await lockedClient.authenticate(''), isFalse);
+      expect(lockedClient.state.errorMessage, equals('Password cannot be empty.'));
+      expect(lockedTransport.writesFor(Bluepad32Uuids.serviceAuth), isEmpty);
+
+      final String oversizedPass = 'A' * 32;
+      expect(await lockedClient.authenticate(oversizedPass), isFalse);
+      expect(
+        lockedClient.state.errorMessage,
+        contains('31 UTF-8 bytes or fewer'),
+      );
+      expect(lockedTransport.writesFor(Bluepad32Uuids.serviceAuth), isEmpty);
+
+      expect(await lockedClient.authenticate('wrong'), isFalse);
+      expect(
+        lockedTransport.lastWriteFor(Bluepad32Uuids.serviceAuth),
+        equals(Uint8List.fromList(utf8.encode('wrong'))),
+      );
+      expect(
+        lockedClient.state.authStatus,
+        equals(Bluepad32AuthStatus.required),
+      );
+      expect(
+        lockedClient.state.errorMessage,
+        contains('Authentication failed:'),
+      );
+
+      // 4. Successful authenticate('1234') unlock & full hydration.
+      final bool ok = await lockedClient.authenticate('1234');
+      expect(ok, isTrue);
+      expect(
+        lockedTransport.lastWriteFor(Bluepad32Uuids.serviceAuth),
+        equals(Uint8List.fromList(utf8.encode('1234'))),
+      );
+      expect(
+        lockedClient.state.authStatus,
+        equals(Bluepad32AuthStatus.authenticated),
+      );
+      expect(lockedClient.state.isAuthenticated, isTrue);
+      expect(lockedClient.state.requiresAuthentication, isFalse);
+      expect(lockedClient.state.isPasswordProtected, isTrue);
+      expect(lockedClient.state.errorMessage, isNull);
+      expect(lockedTransport.notificationsEnabled, isTrue);
+      expect(lockedTransport.readCounts[Bluepad32Uuids.maxConnections], equals(1));
+      expect(lockedClient.state.bleEnabled, isTrue);
+
+      // Verify subsequent AC05 notifications are delivered and merged into state.controllers.
+      final ConnectedController slot0 = ConnectedController(
+        idx: 0,
+        address: MacAddress.parse('AA:BB:CC:11:22:33'),
+        vendorId: 0x054C,
+        productId: 0x0CE6,
+        state: Bluepad32DeviceState.deviceReady,
+        incoming: true,
+        controllerType: Bluepad32ControllerType.ps5Controller,
+        controllerSubtype: Bluepad32ControllerSubtype.none,
+      );
+      lockedTransport.emitConnectedDevicesNotification(slot0.toBytes());
+      await Future<void>.delayed(Duration.zero);
+      expect(lockedClient.state.activeControllers, hasLength(1));
+      expect(lockedClient.state.controllers[0], equals(slot0));
+    });
+
+    test('setServiceName() validates UTF-8 byte length (1..29 bytes), updates AC0D, and handles errors', () async {
+      final FakeBluepad32GattTransport transport = FakeBluepad32GattTransport(
+        serviceName: 'Bluepad32 rc car',
+      );
+      final Bluepad32Client client = Bluepad32Client.test(
+        transport: transport,
+        initialState: const Bluepad32State(
+          isConnected: true,
+          serviceName: 'Bluepad32 rc car',
+        ),
+      );
+      addTearDown(client.dispose);
+
+      // 1. Valid rename (16 bytes)
+      await client.setServiceName('Bluepad32 Arcade');
+      expect(
+        transport.lastWriteFor(Bluepad32Uuids.serviceName),
+        equals(Uint8List.fromList(utf8.encode('Bluepad32 Arcade'))),
+      );
+      expect(client.state.serviceName, equals('Bluepad32 Arcade'));
+      expect(client.state.errorMessage, isNull);
+
+      // 2. Trimming & exact 29-byte boundary
+      const String exact29 = '12345678901234567890123456789';
+      expect(utf8.encode(exact29), hasLength(29));
+      await client.setServiceName('  $exact29  ');
+      expect(client.state.serviceName, equals(exact29));
+      expect(client.state.errorMessage, isNull);
+
+      // 3. Empty and whitespace-only names rejected before GATT write
+      final int writesBeforeInvalid =
+          transport.writesFor(Bluepad32Uuids.serviceName).length;
+      await client.setServiceName('');
+      expect(client.state.errorMessage, equals('Service name cannot be empty.'));
+      expect(client.state.serviceName, equals(exact29));
+      await client.setServiceName('   ');
+      expect(client.state.errorMessage, equals('Service name cannot be empty.'));
+      expect(client.state.serviceName, equals(exact29));
+
+      // 4. Oversized ASCII (30 bytes) and multi-byte UTF-8 (10 x 3-byte chars = 30 bytes) rejected before GATT write
+      await client.setServiceName('123456789012345678901234567890');
+      expect(
+        client.state.errorMessage,
+        contains('29 UTF-8 bytes or fewer'),
+      );
+      expect(client.state.serviceName, equals(exact29));
+
+      final String multiByte30 = '🎮' * 8; // 8 * 4 = 32 UTF-8 bytes
+      await client.setServiceName(multiByte30);
+      expect(
+        client.state.errorMessage,
+        contains('29 UTF-8 bytes or fewer'),
+      );
+      expect(client.state.serviceName, equals(exact29));
+      expect(
+        transport.writesFor(Bluepad32Uuids.serviceName),
+        hasLength(writesBeforeInvalid),
+      );
+
+      // 5. GATT write failure on AC0D preserves prior serviceName and sets errorMessage
+      transport.setWriteError(
+        Bluepad32Uuids.serviceName,
+        (_) => StateError('AC0D write failed'),
+      );
+      await client.setServiceName('Bluepad32 Robot');
+      expect(client.state.serviceName, equals(exact29));
+      expect(
+        client.state.errorMessage,
+        startsWith('Failed to update service name:'),
+      );
+    });
+
+    test('Bluepad32Client(device: ...) exercises _DeviceBluepad32GattTransport discovery, read/write, notifications, legacy firmware fallback, and missing service/characteristic errors', () async {
       final _FakeGattBluetoothDevice device = _FakeGattBluetoothDevice(
         id: 'AA:BB:CC:DD:EE:10',
       );
@@ -1448,10 +1735,13 @@ void main() {
         contains('Bluepad32 GATT service (${Bluepad32Uuids.service}) not found on device.'),
       );
 
-      // 3. Populate Bluepad32 service with AC01..AC09 characteristics and verify connect(), notifications, write, and disconnect()
+      // 3. Legacy firmware compatibility: only AC01..AC0C present (AC0D and AC0E absent).
       final Map<Guid, _FakeBluetoothCharacteristic> chars =
           <Guid, _FakeBluetoothCharacteristic>{};
-      for (final Guid uuid in Bluepad32Uuids.allCharacteristics) {
+      for (final Guid uuid in Bluepad32Uuids.allCharacteristics.where(
+        (Guid u) =>
+            u != Bluepad32Uuids.serviceName && u != Bluepad32Uuids.serviceAuth,
+      )) {
         chars[uuid] = _FakeBluetoothCharacteristic(
           remoteId: device.remoteId,
           serviceUuid: Bluepad32Uuids.service,
@@ -1480,6 +1770,8 @@ void main() {
       await client.connect();
       expect(client.state.isConnected, isTrue);
       expect(client.state.firmwareVersion, equals('v4.4.0'));
+      expect(client.state.serviceName, isEmpty);
+      expect(client.state.authStatus, equals(Bluepad32AuthStatus.open));
       expect(chars[Bluepad32Uuids.connectedDevices]!.notifyEnabled, isTrue);
 
       // Emit an AC05 notification over onValueReceived

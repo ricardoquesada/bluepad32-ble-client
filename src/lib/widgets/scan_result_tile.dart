@@ -95,14 +95,23 @@ class _ScanResultTileState extends State<ScanResultTile> {
 
   bool get _isBluepad32 => ScanResultTile.isBluepad32Peripheral(widget.result);
 
+  /// Builds the primary tile header, prioritizing the live BLE advertising/scan-response
+  /// name (`advertisementData.advName`, populated by Bluepad32's 31-byte `ADV_IND` +
+  /// `SCAN_RSP` dual-PDU packets) over `device.platformName` (which OS Bluetooth
+  /// stacks cache by MAC address across peripheral renames). When both exist and
+  /// differ, displays `'Cached OS Name: <platformName>'` as a subtitle.
   Widget _buildTitle(BuildContext context) {
     final ThemeData theme = Theme.of(context);
     final ColorScheme colorScheme = theme.colorScheme;
-    final String name = widget.result.device.platformName.isNotEmpty
-        ? widget.result.device.platformName
-        : (widget.result.advertisementData.advName.isNotEmpty
-            ? widget.result.advertisementData.advName
-            : 'Unnamed Device');
+    final String advName = widget.result.advertisementData.advName.trim();
+    final String platformName = widget.result.device.platformName.trim();
+    final String name = advName.isNotEmpty
+        ? advName
+        : (platformName.isNotEmpty
+            ? platformName
+            : (_isBluepad32 ? 'Bluepad32 Device' : 'Unnamed Device'));
+    final bool hasDistinctCachedName =
+        advName.isNotEmpty && platformName.isNotEmpty && advName != platformName;
 
     return Column(
       mainAxisAlignment: MainAxisAlignment.start,
@@ -158,6 +167,13 @@ class _ScanResultTileState extends State<ScanResultTile> {
             color: colorScheme.onSurfaceVariant,
           ),
         ),
+        if (hasDistinctCachedName)
+          Text(
+            'Cached OS Name: $platformName',
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ),
       ],
     );
   }

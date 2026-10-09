@@ -6,12 +6,13 @@ It connects to the Bluepad32 BLE GATT service (`4627C4A4-AC00-46B9-B688-AFC5C1BF
 
 ## Features
 
-* **Device Discovery:** Scans for nearby Bluepad32 peripherals advertising the Bluepad32 BLE service.
-* **Live Controller Monitor:** Displays connected controllers in real time (controller model, MAC address, Vendor/Product ID, connection state) and allows disconnecting individual slots.
-* **Radio & Pairing Controls:** Toggle controller scanning/pairing, BLE controller connections, and virtual child devices (such as DualShock 4 / DualSense touchpad mice).
-* **Controller Button Mappings:** Switch between **Xbox**, **Nintendo Switch**, and **Custom** button/axis remapping presets.
-* **Bluetooth MAC Allowlist:** Enable or disable allowlist enforcement and manage up to 4 allowed controller MAC addresses (including a one-tap shortcut to add currently connected controllers).
-* **System Maintenance:** Clear stored Bluetooth pairing keys or reboot the Bluepad32 microcontroller remotely.
+* **Device Discovery & Custom Service Identity (`AC0D`):** Scans for nearby Bluepad32 peripherals advertising the Bluepad32 BLE service, prioritizing live `ADV_IND` + `SCAN_RSP` advertising names over stale OS-cached device names and supporting inline service renaming (`1–29` UTF-8 bytes) from the dashboard.
+* **Session Password Authentication (`AC0E`):** Supports password-protected Bluepad32 peripherals (`1–31` UTF-8 bytes), prompting to unlock the BLE session before reading or modifying protected controller telemetry and settings.
+* **Live Controller Monitor (`AC05`):** Displays connected controllers in real time (controller model, MAC address, Vendor/Product ID, connection state) and allows disconnecting individual slots (`AC0A`).
+* **Radio & Pairing Controls (`AC03`, `AC04`, `AC09`):** Toggle controller scanning/pairing, BLE controller connections, and virtual child devices (such as DualShock 4 / DualSense touchpad mice).
+* **Controller Button Mappings (`AC06`):** Switch between **Xbox**, **Nintendo Switch**, and **Custom** button/axis remapping presets.
+* **Bluetooth MAC Allowlist (`AC07`, `AC08`):** Enable or disable allowlist enforcement and manage up to 4 allowed controller MAC addresses (including a one-tap shortcut to add currently connected controllers).
+* **System Maintenance (`AC0B`, `AC0C`):** Clear stored Bluetooth pairing keys or reboot the Bluepad32 microcontroller remotely.
 
 ## Supported Platforms
 

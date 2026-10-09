@@ -161,7 +161,8 @@ void main() {
           ),
         );
 
-        expect(find.text('Bluepad32-ESP32'), findsOneWidget);
+        expect(find.text('BP32-Adv'), findsOneWidget);
+        expect(find.text('Cached OS Name: Bluepad32-ESP32'), findsOneWidget);
         expect(find.text('Bluepad32'), findsOneWidget);
         expect(find.text('AA:BB:CC:DD:EE:01'), findsOneWidget);
         expect(find.text('-55 dBm'), findsOneWidget);
@@ -174,11 +175,11 @@ void main() {
         expect(tapCount, equals(1));
 
         // Expand the ExpansionTile by tapping the title text.
-        await tester.tap(find.text('Bluepad32-ESP32'));
+        await tester.tap(find.text('BP32-Adv'));
         await tester.pumpAndSettle();
 
         expect(find.text('Name'), findsOneWidget);
-        expect(find.text('BP32-Adv'), findsOneWidget);
+        expect(find.text('BP32-Adv'), findsNWidgets(2));
         expect(find.text('Tx Power Level'), findsOneWidget);
         expect(find.text('-12'), findsOneWidget);
         expect(find.text('Appearance'), findsOneWidget);
@@ -234,6 +235,56 @@ void main() {
         final Iterable<FilledButton> buttons =
             tester.widgetList<FilledButton>(find.byType(FilledButton));
         expect(buttons.last.onPressed, isNull);
+      },
+    );
+
+    testWidgets(
+      'ScanResultTile prioritizes live advName ("Bluepad32 rc car", "Bluepad32 on esp32") over stale OS-cached platformName and falls back to platformName when advName is empty',
+      (WidgetTester tester) async {
+        final ScanResult rcCar = _makeScanResult(
+          id: 'AA:BB:CC:DD:EE:10',
+          platformName: 'Bluepad32',
+          advName: 'Bluepad32 rc car',
+          serviceUuids: <Guid>[Bluepad32Uuids.service],
+        );
+        final ScanResult esp32Host = _makeScanResult(
+          id: 'AA:BB:CC:DD:EE:11',
+          platformName: 'BP32',
+          advName: 'Bluepad32 on esp32',
+          serviceUuids: <Guid>[Bluepad32Uuids.service],
+        );
+        final ScanResult cachedOnly = _makeScanResult(
+          id: 'AA:BB:CC:DD:EE:12',
+          platformName: 'Bluepad32-CachedOnly',
+          advName: '',
+          serviceUuids: <Guid>[Bluepad32Uuids.service],
+        );
+        final ScanResult unnamedBluepad = _makeScanResult(
+          id: 'AA:BB:CC:DD:EE:13',
+          platformName: '',
+          advName: '',
+          serviceUuids: <Guid>[Bluepad32Uuids.service],
+        );
+
+        await tester.pumpWidget(
+          _wrapWithMaterialApp(
+            ListView(
+              children: <Widget>[
+                ScanResultTile(result: rcCar),
+                ScanResultTile(result: esp32Host),
+                ScanResultTile(result: cachedOnly),
+                ScanResultTile(result: unnamedBluepad),
+              ],
+            ),
+          ),
+        );
+
+        expect(find.text('Bluepad32 rc car'), findsOneWidget);
+        expect(find.text('Cached OS Name: Bluepad32'), findsOneWidget);
+        expect(find.text('Bluepad32 on esp32'), findsOneWidget);
+        expect(find.text('Cached OS Name: BP32'), findsOneWidget);
+        expect(find.text('Bluepad32-CachedOnly'), findsOneWidget);
+        expect(find.text('Bluepad32 Device'), findsOneWidget);
       },
     );
   });
