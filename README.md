@@ -10,7 +10,7 @@ It connects to the Bluepad32 BLE GATT service (`4627C4A4-AC00-46B9-B688-AFC5C1BF
 * **Session Password Authentication (`AC0E`):** Supports password-protected Bluepad32 peripherals (`1–31` UTF-8 bytes), prompting to unlock the BLE session before reading or modifying protected controller telemetry and settings.
 * **Live Controller Monitor (`AC05`):** Displays connected controllers in real time (controller model, MAC address, Vendor/Product ID, connection state) and allows disconnecting individual slots (`AC0A`).
 * **Radio & Pairing Controls (`AC03`, `AC04`, `AC09`):** Toggle controller scanning/pairing, BLE controller connections, and virtual child devices (such as DualShock 4 / DualSense touchpad mice).
-* **Controller Button Mappings (`AC06`):** Switch between **Xbox**, **Nintendo Switch**, and **Custom** button/axis remapping presets.
+* **Controller Button Mappings & Custom Remapping Matrix (`AC06`, `AC0F`):** Switch between **Xbox**, **Nintendo Switch**, and **Custom** presets (`AC06`, accepting 1-byte preset selection or 29-byte atomic custom-mapping writes), or open the interactive **Custom Remapping Matrix** editor to inspect and customize all 28 fields of `uni_gamepad_mappings_t` (`AC0F`: 4 D-pad directions, 10 face/shoulder/trigger/thumb buttons, 4 misc buttons, 4 analog stick axes, 4 axis-inversion switches, and 2 analog pedals/triggers).
 * **Bluetooth MAC Allowlist (`AC07`, `AC08`):** Enable or disable allowlist enforcement and manage up to 4 allowed controller MAC addresses (including a one-tap shortcut to add currently connected controllers).
 * **System Maintenance (`AC0B`, `AC0C`):** Clear stored Bluetooth pairing keys or reboot the Bluepad32 microcontroller remotely.
 

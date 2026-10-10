@@ -1,4 +1,6 @@
-// GATT UUID registry for the Bluepad32 BLE configuration and telemetry service.
+/// GATT UUID registry for the Bluepad32 BLE configuration and telemetry service
+/// (`4627c4a4-ac00-46b9-b688-afc5c1bf7f63`, characteristics `AC01`–`AC0F`).
+library;
 
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
@@ -6,15 +8,26 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 /// (`src/components/bluepad32/bt/uni_bt_service.gatt`).
 ///
 /// The primary service uses base UUID `4627c4a4-ac00-46b9-b688-afc5c1bf7f63`
-/// with 14 characteristics numbered contiguously from `AC01` through `AC0E`:
+/// with 15 characteristics numbered contiguously from `AC01` through `AC0F`:
 /// - `AC05` ([connectedDevices]) unifies both on-demand full-table reads and
 ///   reactive change notifications over a single GATT handle.
+/// - `AC06` ([mappings]) selects the active controller mapping preset (`0=Xbox`,
+///   `1=Switch`, `2=Custom`) and also accepts 29-byte atomic custom mapping writes.
 /// - `AC0D` ([serviceName]) exposes the custom UTF-8 BLE service name (`1..29`
 ///   bytes, fitting inside the 31-byte `SCAN_RSP` PDU alongside the 8-byte
 ///   shortened/complete name in `ADV_IND`).
 /// - `AC0E` ([serviceAuth]) enforces per-connection session authentication
 ///   (`0 = open`, `1 = password required`, `2 = authenticated`), gating reads
-///   to `AC02`–`AC09`, writes to `AC03`–`AC0D`, and `AC05` CCCD subscriptions.
+///   to `AC02`–`AC09` and `AC0F`, writes to `AC03`–`AC0D` and `AC0F`, and `AC05`
+///   CCCD subscriptions.
+/// - `AC0F` ([customMappings]) exposes the 28-byte packed `uni_gamepad_mappings_t`
+///   custom controller remapping matrix (`READ | WRITE | DYNAMIC`).
+///
+/// ```dart
+/// final Guid presetUuid = Bluepad32Uuids.mappings;       // AC06
+/// final Guid matrixUuid = Bluepad32Uuids.customMappings; // AC0F
+/// assert(Bluepad32Uuids.allCharacteristics.length == 15);
+/// ```
 abstract final class Bluepad32Uuids {
   /// Primary Bluepad32 GATT Service UUID (`4627C4A4-AC00-46B9-B688-AFC5C1BF7F63`).
   static final Guid service = Guid('4627c4a4-ac00-46b9-b688-afc5c1bf7f63');
@@ -34,7 +47,7 @@ abstract final class Bluepad32Uuids {
   /// `AC05` (`READ | NOTIFY | DYNAMIC`): Connected controller table (`N * 16`-byte `compact_device_t` records).
   static final Guid connectedDevices = Guid('4627c4a4-ac05-46b9-b688-afc5c1bf7f63');
 
-  /// `AC06` (`READ | WRITE | DYNAMIC`): Controller button mapping layout (`uint8_t`: 0=Xbox, 1=Switch, 2=Custom).
+  /// `AC06` (`READ | WRITE | DYNAMIC`): Controller button mapping layout (`uint8_t`: 0=Xbox, 1=Switch, 2=Custom; or 29-byte `[2, ...28B...]`).
   static final Guid mappings = Guid('4627c4a4-ac06-46b9-b688-afc5c1bf7f63');
 
   /// `AC07` (`READ | WRITE | DYNAMIC`): Whether the Bluetooth MAC allowlist is enforced (`uint8_t`, 0 or 1).
@@ -65,6 +78,14 @@ abstract final class Bluepad32Uuids {
   /// (`READ` returns `uint8_t`: `0=open`, `1=required`, `2=authenticated`;
   /// `WRITE` submits a `1..31`-byte UTF-8 password).
   static final Guid serviceAuth = Guid('4627c4a4-ac0e-46b9-b688-afc5c1bf7f63');
+
+  /// Canonical lowercase UUID string for `AC0F` ([customMappings]).
+  static const String customMappingsUuid =
+      '4627c4a4-ac0f-46b9-b688-afc5c1bf7f63';
+
+  /// `AC0F` (`READ | WRITE | DYNAMIC`): 28-byte packed `uni_gamepad_mappings_t`
+  /// custom controller remapping table.
+  static final Guid customMappings = Guid(customMappingsUuid);
 
   /// Short-handle alias for `AC01` ([version]).
   static final Guid ac01 = version;
@@ -108,7 +129,29 @@ abstract final class Bluepad32Uuids {
   /// Short-handle alias for `AC0E` ([serviceAuth]).
   static final Guid ac0e = serviceAuth;
 
-  /// All 14 characteristic UUIDs (`AC01` through `AC0E`) in the Bluepad32 GATT service.
+  /// Short-handle alias for `AC0F` ([customMappings]).
+  static final Guid ac0f = customMappings;
+
+  /// Human-readable short names keyed by 4-character hex handle (`ac01`–`ac0f`).
+  static const Map<String, String> shortNames = <String, String>{
+    'ac01': 'Firmware Version (AC01)',
+    'ac02': 'Max Connections (AC02)',
+    'ac03': 'BLE Enabled (AC03)',
+    'ac04': 'Controller Scanning (AC04)',
+    'ac05': 'Connected Devices (AC05)',
+    'ac06': 'Controller Mappings (AC06)',
+    'ac07': 'Allowlist Enabled (AC07)',
+    'ac08': 'Allowlist Addresses (AC08)',
+    'ac09': 'Virtual Devices Enabled (AC09)',
+    'ac0a': 'Disconnect Device (AC0A)',
+    'ac0b': 'Delete Stored Keys (AC0B)',
+    'ac0c': 'Reset Device (AC0C)',
+    'ac0d': 'Service Name (AC0D)',
+    'ac0e': 'Service Auth (AC0E)',
+    'ac0f': 'Custom Mappings (AC0F)',
+  };
+
+  /// All 15 characteristic UUIDs (`AC01` through `AC0F`) in the Bluepad32 GATT service.
   static final List<Guid> allCharacteristics = List.unmodifiable(<Guid>[
     version,
     maxConnections,
@@ -124,5 +167,6 @@ abstract final class Bluepad32Uuids {
     resetDevice,
     serviceName,
     serviceAuth,
+    customMappings,
   ]);
 }

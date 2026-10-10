@@ -1,13 +1,15 @@
-/// Widget tests for the Material 3 [DeviceScreen] dashboard and its six
-/// configuration cards.
+/// Widget tests for the Material 3 [DeviceScreen] dashboard and its
+/// configuration and authentication cards (`AC01`–`AC0F`).
 ///
 /// Verifies reactive state rendering and GATT write/read dispatch across:
-/// 1. [SystemInfoCard] (`AC01`, `AC02`, `refreshAll`)
-/// 2. `ConnectedControllersCard` (`AC05`, `AC0A`)
-/// 3. `SettingsCard` (`AC03`, `AC04`, `AC07`)
-/// 4. `AllowlistCard` and `_AddMacAddressDialog` (`AC08` validation and normalization)
-/// 5. `MappingsCard` (`AC06`, `AC09`)
-/// 6. `DangerZoneCard` (`AC0B`, `AC0C` confirmation dialogs)
+/// 1. [SystemInfoCard] (`AC01`, `AC02`, `AC0D` inline service renaming, `refreshAll`)
+/// 2. [PasswordAuthCard] (`AC0E` password authentication lock screen and session unlock)
+/// 3. [ConnectedControllersCard] (`AC05`, `AC0A`)
+/// 4. [SettingsTogglesCard] (`AC03`, `AC04`, `AC07`)
+/// 5. [AllowlistCard] (`AC08` validation and normalization)
+/// 6. [MappingsCard] and [CustomMappingsEditorSheet] (`AC06`, `AC09`, and `AC0F`
+///    28-byte custom remapping matrix presets, dropdowns, switches, Apply/Cancel/Reset: `FL-WID-01..05`)
+/// 7. [SystemActionsCard] (`AC0B`, `AC0C` confirmation dialogs)
 /// as well as [DeviceScreen] `autoConnect`, `isConnecting`, and `isRefreshing`
 /// lifecycle transitions using [Bluepad32Client.test] and
 /// [FakeBluepad32GattTransport].
@@ -893,6 +895,221 @@ void main() {
           equals(Uint8List.fromList(utf8.encode('Bluepad32 on esp32'))),
         );
         expect(find.text('Bluepad32 on esp32'), findsNWidgets(2));
+      },
+    );
+
+    testWidgets(
+      'FL-WID-01..04: MappingsCard custom remapping summary, CustomMappingsEditorSheet preset chips, Apply, Cancel, and Reset flows',
+      (WidgetTester tester) async {
+        await tester.binding.setSurfaceSize(const Size(1280, 1800));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+
+        final FakeBluepad32GattTransport transport =
+            FakeBluepad32GattTransport();
+        final Bluepad32Client client =
+            Bluepad32Client.test(transport: transport);
+        addTearDown(client.dispose);
+
+        await tester.pumpWidget(
+          _wrapWithMaterial3(
+            DeviceScreen(
+              client: client,
+              autoConnect: true,
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // FL-WID-01: Default Xbox summary & opens editor sheet; Reset button hidden when default.
+        expect(find.text('Default Xbox layout'), findsOneWidget);
+        final Finder customizeButton = find.byKey(
+          const Key('open_custom_mappings_editor_button'),
+        );
+        final Finder resetButton = find.byKey(
+          const Key('reset_custom_mappings_button'),
+        );
+        expect(customizeButton, findsOneWidget);
+        expect(resetButton, findsNothing);
+
+        // FL-WID-04: Open sheet, tap Swap Sticks chip, then Cancel -> discards draft without GATT write.
+        await tester.ensureVisible(customizeButton);
+        await tester.pumpAndSettle();
+        await tester.tap(customizeButton);
+        await tester.pumpAndSettle();
+
+        expect(find.text('Custom Remapping Matrix'), findsOneWidget);
+        expect(find.text('0 remapped'), findsOneWidget);
+        await tester.tap(find.byKey(const Key('preset_swap_sticks_chip')));
+        await tester.pumpAndSettle();
+        expect(find.text('6 remapped'), findsOneWidget);
+
+        await tester.tap(find.byKey(const Key('cancel_custom_mappings_button')));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Custom Remapping Matrix'), findsNothing);
+        expect(transport.writesFor(Bluepad32Uuids.customMappings), isEmpty);
+        expect(client.state.mappings.customMappings.isDefault, isTrue);
+        expect(find.text('Default Xbox layout'), findsOneWidget);
+
+        // FL-WID-02: Open sheet, tap Switch A/B & X/Y + Swap Sticks, then Apply.
+        await tester.tap(customizeButton);
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(const Key('preset_switch_ab_xy_chip')),
+          findsOneWidget,
+        );
+        await tester.tap(find.byKey(const Key('preset_switch_layout_chip')));
+        await tester.pumpAndSettle();
+        expect(find.text('4 remapped'), findsOneWidget);
+
+        await tester.tap(find.byKey(const Key('preset_swap_sticks_chip')));
+        await tester.pumpAndSettle();
+        expect(find.text('10 remapped'), findsOneWidget);
+
+        await tester.tap(find.byKey(const Key('apply_custom_mappings_button')));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Custom Remapping Matrix'), findsNothing);
+        final CustomGamepadMappings expectedCombined =
+            CustomGamepadMappings.switchPreset().withSwappedSticks();
+        expect(
+          transport.lastWriteFor(Bluepad32Uuids.customMappings),
+          equals(expectedCombined.toBytes()),
+        );
+        expect(
+          client.state.mappings.type,
+          equals(GamepadMappingsType.custom),
+        );
+        expect(find.text('10 controls remapped'), findsOneWidget);
+        expect(resetButton, findsOneWidget);
+
+        // FL-WID-03: Tap Reset button on MappingsCard -> restores Xbox default and hides Reset button.
+        await tester.ensureVisible(resetButton);
+        await tester.pumpAndSettle();
+        await tester.tap(resetButton);
+        await tester.pumpAndSettle();
+
+        expect(
+          transport.lastWriteFor(Bluepad32Uuids.customMappings),
+          equals(CustomGamepadMappings.xboxDefault().toBytes()),
+        );
+        expect(client.state.mappings.customMappings.isDefault, isTrue);
+        expect(find.text('Default Xbox layout'), findsOneWidget);
+        expect(resetButton, findsNothing);
+      },
+    );
+
+    testWidgets(
+      'FL-WID-05: CustomMappingsEditorSheet individual dropdown and axis inversion switches update 28-byte payload',
+      (WidgetTester tester) async {
+        await tester.binding.setSurfaceSize(const Size(1280, 1800));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+
+        final FakeBluepad32GattTransport transport =
+            FakeBluepad32GattTransport();
+        final Bluepad32Client client =
+            Bluepad32Client.test(transport: transport);
+        addTearDown(client.dispose);
+
+        await tester.pumpWidget(
+          _wrapWithMaterial3(
+            DeviceScreen(
+              client: client,
+              autoConnect: true,
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final Finder customizeButton = find.byKey(
+          const Key('open_custom_mappings_editor_button'),
+        );
+        await tester.ensureVisible(customizeButton);
+        await tester.pumpAndSettle();
+        await tester.tap(customizeButton);
+        await tester.pumpAndSettle();
+
+        // 1. Change Physical A (South) dropdown to Button Y (North).
+        final Finder buttonADropdown = find.byKey(
+          const Key('remap_button_a_dropdown'),
+        );
+        await tester.ensureVisible(buttonADropdown);
+        await tester.pumpAndSettle();
+        await tester.tap(buttonADropdown);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Button Y (North)').last);
+        await tester.pumpAndSettle();
+
+        // 2. Scroll to Invert Left Stick Y switch and toggle it on.
+        final Finder invertYSwitch = find.byKey(
+          const Key('invert_axis_y_switch'),
+        );
+        await tester.scrollUntilVisible(
+          invertYSwitch,
+          200,
+          scrollable: find.descendant(
+            of: find.byKey(const Key('custom_mappings_scroll_view')),
+            matching: find.byType(Scrollable),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(invertYSwitch);
+        await tester.pumpAndSettle();
+
+        // 3. Scroll to Brake Pedal dropdown and change it to Throttle (R2).
+        final Finder brakeDropdown = find.byKey(
+          const Key('remap_pedal_brake_dropdown'),
+        );
+        await tester.scrollUntilVisible(
+          brakeDropdown,
+          200,
+          scrollable: find.descendant(
+            of: find.byKey(const Key('custom_mappings_scroll_view')),
+            matching: find.byType(Scrollable),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(brakeDropdown);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Throttle (R2)').last);
+        await tester.pumpAndSettle();
+
+        expect(find.text('3 remapped'), findsOneWidget);
+
+        // 4. Apply and verify the 28-byte payload written to AC0F.
+        await tester.tap(find.byKey(const Key('apply_custom_mappings_button')));
+        await tester.pumpAndSettle();
+
+        expect(
+          client.state.mappings.customMappings.buttonA,
+          equals(GamepadButtonTarget.y),
+        );
+        expect(client.state.mappings.customMappings.axisYInverted, isTrue);
+        expect(
+          client.state.mappings.customMappings.brake,
+          equals(GamepadPedalTarget.throttle),
+        );
+        final Uint8List writtenPayload =
+            transport.lastWriteFor(Bluepad32Uuids.customMappings)!;
+        expect(
+          writtenPayload,
+          equals(
+            CustomGamepadMappings.xboxDefault()
+                .copyWith(
+                  buttonA: GamepadButtonTarget.y,
+                  axisYInverted: true,
+                  brake: GamepadPedalTarget.throttle,
+                )
+                .toBytes(),
+          ),
+        );
+        expect(writtenPayload[4], equals(3));
+        expect(writtenPayload[23], equals(1));
+        expect(writtenPayload[26], equals(1));
+        expect(writtenPayload.sublist(0, 4), equals(<int>[0, 1, 3, 2]));
+        expect(writtenPayload.sublist(14, 18), equals(<int>[1, 2, 0, 3]));
+        expect(find.text('3 controls remapped'), findsOneWidget);
       },
     );
   });

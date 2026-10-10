@@ -1,4 +1,7 @@
-// Primary Material 3 dashboard screen for monitoring and configuring a Bluepad32 BLE peripheral.
+/// Primary Material 3 dashboard screen ([DeviceScreen]) and session unlock gate
+/// ([PasswordAuthCard]) for monitoring and configuring a Bluepad32 BLE peripheral
+/// across GATT characteristics `AC01` through `AC0F`.
+library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
@@ -284,6 +287,8 @@ class _DeviceScreenState extends State<DeviceScreen> {
                         onVirtualDevicesChanged:
                             _client.setVirtualDevicesEnabled,
                         onMappingsTypeChanged: _client.setMappingsType,
+                        onApplyCustomMappings: (CustomGamepadMappings custom) =>
+                            _client.setCustomMappings(custom),
                       ),
                       const SizedBox(height: 12),
                       SystemActionsCard(

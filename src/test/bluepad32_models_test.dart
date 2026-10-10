@@ -2,15 +2,19 @@
 /// and [Bluepad32Client] service layer interactions.
 ///
 /// Covers:
-/// - [Bluepad32Uuids] service (`AC00`) and characteristic (`AC01`–`AC0C`) constants
+/// - [Bluepad32Uuids] service (`AC00`) and characteristic (`AC01`–`AC0F`) constants (`FL-UUID-01`)
 /// - [ConnectedController] 16-byte `compact_device_t` little-endian decoding,
 ///   64-byte 4-slot table parsing, and slot occupancy boundary conditions
 /// - [MacAddress] parsing, normalization, zero-sentinel filtering, and byte serialization
-/// - [GamepadMappings] and [GamepadMappingsType] decoding and fallback defaults
+/// - [GamepadMappings], [GamepadMappingsType], and 28-byte [CustomGamepadMappings]
+///   (`uni_gamepad_mappings_t` / `AC0F`) serialization, asymmetric D-pad (`[0, 1, 3, 2]`)
+///   and misc button (`[1, 2, 0, 3]`) field ordering, presets, and 28-field validation (`FL-MOD-01..05`)
 /// - [Bluepad32ControllerType], [Bluepad32ControllerSubtype], and
 ///   [Bluepad32DeviceState] enum mappings, labels, and Material icons
 /// - [Bluepad32State] immutability, `copyWith(clearError: true)`, and equality
-/// - [Bluepad32Client] GATT read/write/notify lifecycle, allowlist 6-zero-byte
+/// - [Bluepad32Client] GATT read/write/notify lifecycle, `AC0D` custom service naming,
+///   `AC0E` password authentication gating, `AC0F`/`AC06` custom remapping matrix
+///   round-trips and legacy 29-byte fallback (`FL-CLI-01..06`), allowlist 6-zero-byte
 ///   clearing (`AC08`), reboot disconnection tolerance (`AC0C`), and production
 ///   GATT transport discovery via in-memory [BluetoothDevice] fakes.
 library;
@@ -26,7 +30,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('Bluepad32Uuids', () {
-    test('defines primary service and contiguous AC01..AC0E characteristics', () {
+    test('FL-UUID-01: defines primary service and contiguous AC01..AC0F characteristics', () {
       expect(
         Bluepad32Uuids.service,
         Guid('4627c4a4-ac00-46b9-b688-afc5c1bf7f63'),
@@ -87,7 +91,19 @@ void main() {
         Bluepad32Uuids.serviceAuth,
         Guid('4627c4a4-ac0e-46b9-b688-afc5c1bf7f63'),
       );
-      expect(Bluepad32Uuids.allCharacteristics, hasLength(14));
+      expect(
+        Bluepad32Uuids.customMappings,
+        Guid('4627c4a4-ac0f-46b9-b688-afc5c1bf7f63'),
+      );
+      expect(
+        Bluepad32Uuids.customMappingsUuid,
+        equals('4627c4a4-ac0f-46b9-b688-afc5c1bf7f63'),
+      );
+      expect(
+        Bluepad32Uuids.shortNames['ac0f'],
+        equals('Custom Mappings (AC0F)'),
+      );
+      expect(Bluepad32Uuids.allCharacteristics, hasLength(15));
     });
 
     test('Bluepad32Uuids aliases match primary characteristic UUIDs', () {
@@ -109,6 +125,7 @@ void main() {
       expect(Bluepad32Uuids.ac0c, equals(Bluepad32Uuids.resetDevice));
       expect(Bluepad32Uuids.ac0d, equals(Bluepad32Uuids.serviceName));
       expect(Bluepad32Uuids.ac0e, equals(Bluepad32Uuids.serviceAuth));
+      expect(Bluepad32Uuids.ac0f, equals(Bluepad32Uuids.customMappings));
     });
   });
 
@@ -547,6 +564,330 @@ void main() {
           customValue: 1,
         ).toString(),
         equals('GamepadMappings(type: switchLayout, customValue: 1)'),
+      );
+    });
+
+    test('FL-MOD-01: target enum values, labels, isValidValue, and out-of-range fallback', () {
+      // 1. GamepadDpadTarget (up=0, down=1, right=2, left=3)
+      expect(GamepadDpadTarget.up.value, equals(0));
+      expect(GamepadDpadTarget.down.value, equals(1));
+      expect(GamepadDpadTarget.right.value, equals(2));
+      expect(GamepadDpadTarget.left.value, equals(3));
+      expect(GamepadDpadTarget.up.label, equals('D-Pad Up'));
+      expect(GamepadDpadTarget.fromValue(2), equals(GamepadDpadTarget.right));
+      expect(GamepadDpadTarget.fromValue(3), equals(GamepadDpadTarget.left));
+      expect(GamepadDpadTarget.fromValue(99), equals(GamepadDpadTarget.up));
+      expect(GamepadDpadTarget.isValidValue(3), isTrue);
+      expect(GamepadDpadTarget.isValidValue(4), isFalse);
+      expect(GamepadDpadTarget.isValidValue(-1), isFalse);
+      expect(GamepadDpadInput.left, equals(GamepadDpadTarget.left));
+
+      // 2. GamepadButtonTarget (a=0 .. thumbR=9)
+      expect(GamepadButtonTarget.a.value, equals(0));
+      expect(GamepadButtonTarget.b.value, equals(1));
+      expect(GamepadButtonTarget.x.value, equals(2));
+      expect(GamepadButtonTarget.y.value, equals(3));
+      expect(GamepadButtonTarget.shoulderL.value, equals(4));
+      expect(GamepadButtonTarget.shoulderR.value, equals(5));
+      expect(GamepadButtonTarget.triggerL.value, equals(6));
+      expect(GamepadButtonTarget.triggerR.value, equals(7));
+      expect(GamepadButtonTarget.thumbL.value, equals(8));
+      expect(GamepadButtonTarget.thumbR.value, equals(9));
+      expect(GamepadButtonTarget.fromValue(9), equals(GamepadButtonTarget.thumbR));
+      expect(GamepadButtonTarget.fromValue(10), equals(GamepadButtonTarget.a));
+      expect(GamepadButtonTarget.isValidValue(9), isTrue);
+      expect(GamepadButtonTarget.isValidValue(10), isFalse);
+      expect(GamepadButtonInput.y, equals(GamepadButtonTarget.y));
+
+      // 3. GamepadMiscButtonTarget (system=0, select=1, start=2, capture=3)
+      expect(GamepadMiscButtonTarget.system.value, equals(0));
+      expect(GamepadMiscButtonTarget.select.value, equals(1));
+      expect(GamepadMiscButtonTarget.start.value, equals(2));
+      expect(GamepadMiscButtonTarget.capture.value, equals(3));
+      expect(
+        GamepadMiscButtonTarget.fromValue(0),
+        equals(GamepadMiscButtonTarget.system),
+      );
+      expect(
+        GamepadMiscButtonTarget.fromValue(3),
+        equals(GamepadMiscButtonTarget.capture),
+      );
+      expect(
+        GamepadMiscButtonTarget.fromValue(99),
+        equals(GamepadMiscButtonTarget.system),
+      );
+      expect(GamepadMiscButtonTarget.isValidValue(3), isTrue);
+      expect(GamepadMiscButtonTarget.isValidValue(4), isFalse);
+      expect(
+        GamepadMiscButtonInput.capture,
+        equals(GamepadMiscButtonTarget.capture),
+      );
+
+      // 4. GamepadAxisTarget (x=0, y=1, rx=2, ry=3)
+      expect(GamepadAxisTarget.x.value, equals(0));
+      expect(GamepadAxisTarget.y.value, equals(1));
+      expect(GamepadAxisTarget.rx.value, equals(2));
+      expect(GamepadAxisTarget.ry.value, equals(3));
+      expect(GamepadAxisTarget.fromValue(2), equals(GamepadAxisTarget.rx));
+      expect(GamepadAxisTarget.fromValue(99), equals(GamepadAxisTarget.x));
+      expect(GamepadAxisTarget.isValidValue(3), isTrue);
+      expect(GamepadAxisTarget.isValidValue(4), isFalse);
+      expect(GamepadAxisInput.ry, equals(GamepadAxisTarget.ry));
+
+      // 5. GamepadPedalTarget (brake=0, throttle=1)
+      expect(GamepadPedalTarget.brake.value, equals(0));
+      expect(GamepadPedalTarget.throttle.value, equals(1));
+      expect(
+        GamepadPedalTarget.fromValue(1),
+        equals(GamepadPedalTarget.throttle),
+      );
+      expect(
+        GamepadPedalTarget.fromValue(99),
+        equals(GamepadPedalTarget.brake),
+      );
+      expect(GamepadPedalTarget.isValidValue(1), isTrue);
+      expect(GamepadPedalTarget.isValidValue(2), isFalse);
+      expect(GamepadPedalInput.throttle, equals(GamepadPedalTarget.throttle));
+    });
+
+    test('FL-MOD-02: CustomGamepadMappings.defaultXbox 28-byte serialization & asymmetric field ordering', () {
+      expect(CustomGamepadMappings.byteLength, equals(28));
+      expect(CustomGamepadMappings.payloadLength, equals(28));
+      expect(
+        CustomGamepadMappings.xboxDefault(),
+        equals(CustomGamepadMappings.defaultXbox),
+      );
+
+      final Uint8List bytes = CustomGamepadMappings.defaultXbox.toBytes();
+      expect(bytes, hasLength(28));
+
+      // D-Pad asymmetry (offsets 0..3: dpadUp=0, dpadDown=1, dpadLeft=3, dpadRight=2)
+      expect(bytes.sublist(0, 4), equals(<int>[0, 1, 3, 2]));
+      // Buttons (offsets 4..13)
+      expect(
+        bytes.sublist(4, 14),
+        equals(<int>[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]),
+      );
+      // Misc Buttons asymmetry (offsets 14..17: select=1, start=2, system=0, capture=3)
+      expect(bytes.sublist(14, 18), equals(<int>[1, 2, 0, 3]));
+      // Axes (offsets 18..21)
+      expect(bytes.sublist(18, 22), equals(<int>[0, 1, 2, 3]));
+      // Inversions (offsets 22..25)
+      expect(bytes.sublist(22, 26), equals(<int>[0, 0, 0, 0]));
+      // Pedals (offsets 26..27)
+      expect(bytes.sublist(26, 28), equals(<int>[0, 1]));
+
+      expect(CustomGamepadMappings.defaultXbox.isDefault, isTrue);
+      expect(CustomGamepadMappings.defaultXbox.isDefaultXbox, isTrue);
+      expect(CustomGamepadMappings.defaultXbox.modifiedCount, equals(0));
+      expect(CustomGamepadMappings.defaultXbox.customizedFieldCount, equals(0));
+      expect(
+        CustomGamepadMappings.fromBytes(bytes),
+        equals(CustomGamepadMappings.defaultXbox),
+      );
+    });
+
+    test('FL-MOD-03: CustomGamepadMappings.nintendoSwitch preset, swapSticks, and 28-field copyWith', () {
+      expect(
+        CustomGamepadMappings.switchPreset(),
+        equals(CustomGamepadMappings.nintendoSwitch),
+      );
+      expect(
+        CustomGamepadMappings.switchLayout,
+        equals(CustomGamepadMappings.nintendoSwitch),
+      );
+      expect(
+        CustomGamepadMappings.nintendoSwitch.buttonA,
+        equals(GamepadButtonTarget.b),
+      );
+      expect(
+        CustomGamepadMappings.nintendoSwitch.buttonB,
+        equals(GamepadButtonTarget.a),
+      );
+      expect(
+        CustomGamepadMappings.nintendoSwitch.buttonX,
+        equals(GamepadButtonTarget.y),
+      );
+      expect(
+        CustomGamepadMappings.nintendoSwitch.buttonY,
+        equals(GamepadButtonTarget.x),
+      );
+      expect(CustomGamepadMappings.nintendoSwitch.isDefault, isFalse);
+      expect(CustomGamepadMappings.nintendoSwitch.modifiedCount, equals(4));
+
+      final CustomGamepadMappings roundTripped = CustomGamepadMappings.fromBytes(
+        CustomGamepadMappings.nintendoSwitch.toBytes(),
+      );
+      expect(roundTripped, equals(CustomGamepadMappings.nintendoSwitch));
+      expect(
+        roundTripped.hashCode,
+        equals(CustomGamepadMappings.nintendoSwitch.hashCode),
+      );
+
+      final CustomGamepadMappings swapped =
+          CustomGamepadMappings.defaultXbox.withSwappedSticks();
+      expect(swapped, equals(CustomGamepadMappings.swapSticks));
+      expect(swapped.modifiedCount, equals(6));
+
+      // Mutate all 28 fields via copyWith and verify modifiedCount == 28
+      final CustomGamepadMappings allChanged =
+          CustomGamepadMappings.defaultXbox.copyWith(
+        dpadUp: GamepadDpadTarget.down,
+        dpadDown: GamepadDpadTarget.up,
+        dpadLeft: GamepadDpadTarget.right,
+        dpadRight: GamepadDpadTarget.left,
+        buttonA: GamepadButtonTarget.b,
+        buttonB: GamepadButtonTarget.a,
+        buttonX: GamepadButtonTarget.y,
+        buttonY: GamepadButtonTarget.x,
+        buttonShoulderL: GamepadButtonTarget.shoulderR,
+        buttonShoulderR: GamepadButtonTarget.shoulderL,
+        buttonTriggerL: GamepadButtonTarget.triggerR,
+        buttonTriggerR: GamepadButtonTarget.triggerL,
+        buttonThumbL: GamepadButtonTarget.thumbR,
+        buttonThumbR: GamepadButtonTarget.thumbL,
+        miscButtonSelect: GamepadMiscButtonTarget.start,
+        miscButtonStart: GamepadMiscButtonTarget.select,
+        miscButtonSystem: GamepadMiscButtonTarget.capture,
+        miscButtonCapture: GamepadMiscButtonTarget.system,
+        axisX: GamepadAxisTarget.rx,
+        axisY: GamepadAxisTarget.ry,
+        axisRx: GamepadAxisTarget.x,
+        axisRy: GamepadAxisTarget.y,
+        axisXInverted: true,
+        axisYInverted: true,
+        axisRxInverted: true,
+        axisRyInverted: true,
+        brake: GamepadPedalTarget.throttle,
+        throttle: GamepadPedalTarget.brake,
+      );
+      expect(allChanged.modifiedCount, equals(28));
+      expect(allChanged.customizedFieldCount, equals(28));
+      expect(allChanged.isDefault, isFalse);
+      expect(
+        CustomGamepadMappings.fromBytes(allChanged.toBytes()),
+        equals(allChanged),
+      );
+      expect(allChanged.toString(), contains('modifiedCount: 28'));
+      expect(allChanged == Object(), isFalse);
+    });
+
+    test('FL-MOD-04: CustomGamepadMappings.fromBytes offset support, RangeError, and isValidPayload across all 28 fields', () {
+      final Uint8List atomic29 = Uint8List.fromList(<int>[
+        GamepadMappingsType.custom.value,
+        ...CustomGamepadMappings.nintendoSwitch.toBytes(),
+      ]);
+      expect(
+        CustomGamepadMappings.fromBytes(atomic29, 1),
+        equals(CustomGamepadMappings.nintendoSwitch),
+      );
+
+      // Short buffers and negative offsets throw RangeError
+      expect(
+        () => CustomGamepadMappings.fromBytes(const <int>[]),
+        throwsRangeError,
+      );
+      expect(
+        () => CustomGamepadMappings.fromBytes(List<int>.filled(27, 0)),
+        throwsRangeError,
+      );
+      expect(
+        () => CustomGamepadMappings.fromBytes(List<int>.filled(28, 0), 1),
+        throwsRangeError,
+      );
+      expect(
+        () => CustomGamepadMappings.fromBytes(List<int>.filled(28, 0), -1),
+        throwsRangeError,
+      );
+
+      // isValidPayload checks
+      final Uint8List valid = CustomGamepadMappings.defaultXbox.toBytes();
+      expect(CustomGamepadMappings.isValidPayload(valid), isTrue);
+      expect(CustomGamepadMappings.isValidPayload(atomic29, 1), isTrue);
+      expect(CustomGamepadMappings.isValidPayload(valid, -1), isFalse);
+      expect(
+        CustomGamepadMappings.isValidPayload(List<int>.filled(27, 0)),
+        isFalse,
+      );
+
+      final List<int> maxValidPerOffset = <int>[
+        3, 3, 3, 3, // 0..3 dpad (< 4)
+        9, 9, 9, 9, 9, 9, 9, 9, 9, 9, // 4..13 buttons (< 10)
+        3, 3, 3, 3, // 14..17 misc (< 4)
+        3, 3, 3, 3, // 18..21 axes (< 4)
+        1, 1, 1, 1, // 22..25 inversions (<= 1)
+        1, 1, // 26..27 pedals (< 2)
+      ];
+      for (int i = 0; i < 28; i++) {
+        final List<int> copyMax = List<int>.from(valid);
+        copyMax[i] = maxValidPerOffset[i];
+        expect(
+          CustomGamepadMappings.isValidPayload(copyMax),
+          isTrue,
+          reason: 'Offset $i with max valid ${maxValidPerOffset[i]} should be valid',
+        );
+
+        final List<int> copyOver = List<int>.from(valid);
+        copyOver[i] = maxValidPerOffset[i] + 1;
+        expect(
+          CustomGamepadMappings.isValidPayload(copyOver),
+          isFalse,
+          reason: 'Offset $i with ${maxValidPerOffset[i] + 1} should be invalid',
+        );
+
+        final List<int> copyNeg = List<int>.from(valid);
+        copyNeg[i] = -1;
+        expect(
+          CustomGamepadMappings.isValidPayload(copyNeg),
+          isFalse,
+          reason: 'Offset $i with -1 should be invalid',
+        );
+      }
+    });
+
+    test('FL-GM-01..06: GamepadMappings multi-length decoding (0, 1, 2, 28, 29 bytes), atomic serialization, and toString()', () {
+      // FL-GM-00 / 01: 0 bytes
+      final GamepadMappings gm0 = GamepadMappings.fromBytes(const <int>[]);
+      expect(gm0.type, equals(GamepadMappingsType.xbox));
+      expect(gm0.customValue, equals(0));
+      expect(gm0.customMappings, equals(CustomGamepadMappings.defaultXbox));
+
+      // FL-GM-01: 1 byte
+      final GamepadMappings gm1 = GamepadMappings.fromBytes(const <int>[2]);
+      expect(gm1.type, equals(GamepadMappingsType.custom));
+      expect(gm1.customValue, equals(0));
+      expect(gm1.customMappings, equals(CustomGamepadMappings.defaultXbox));
+
+      // FL-GM-02: 2 bytes
+      final GamepadMappings gm2 = GamepadMappings.fromBytes(const <int>[1, 2]);
+      expect(gm2.type, equals(GamepadMappingsType.switchLayout));
+      expect(gm2.customValue, equals(2));
+      expect(gm2.customMappings, equals(CustomGamepadMappings.defaultXbox));
+
+      // FL-GM-28: 28-byte raw AC0F payload
+      final GamepadMappings gm28 = GamepadMappings.fromBytes(
+        CustomGamepadMappings.nintendoSwitch.toBytes(),
+      );
+      expect(gm28.type, equals(GamepadMappingsType.custom));
+      expect(gm28.customMappings, equals(CustomGamepadMappings.nintendoSwitch));
+
+      // FL-GM-29: 29-byte atomic AC06 payload
+      final Uint8List atomicBytes = gm28.toAtomicCustomBytes();
+      expect(atomicBytes, hasLength(29));
+      expect(atomicBytes[0], equals(GamepadMappingsType.custom.value));
+      final GamepadMappings gm29 = GamepadMappings.fromBytes(atomicBytes);
+      expect(gm29.type, equals(GamepadMappingsType.custom));
+      expect(gm29.customMappings, equals(CustomGamepadMappings.nintendoSwitch));
+      expect(gm29.toPresetBytes(), equals(Uint8List.fromList(<int>[2])));
+
+      // FL-GM-STR: toString() compatibility when customMappings is default vs modified
+      expect(
+        gm1.toString(),
+        equals('GamepadMappings(type: custom, customValue: 0)'),
+      );
+      expect(
+        gm28.toString(),
+        contains('customMappings: CustomGamepadMappings(modifiedCount: 4'),
       );
     });
   });
@@ -1735,12 +2076,14 @@ void main() {
         contains('Bluepad32 GATT service (${Bluepad32Uuids.service}) not found on device.'),
       );
 
-      // 3. Legacy firmware compatibility: only AC01..AC0C present (AC0D and AC0E absent).
+      // 3. Legacy firmware compatibility: only AC01..AC0C present (AC0D, AC0E, AC0F absent).
       final Map<Guid, _FakeBluetoothCharacteristic> chars =
           <Guid, _FakeBluetoothCharacteristic>{};
       for (final Guid uuid in Bluepad32Uuids.allCharacteristics.where(
         (Guid u) =>
-            u != Bluepad32Uuids.serviceName && u != Bluepad32Uuids.serviceAuth,
+            u != Bluepad32Uuids.serviceName &&
+            u != Bluepad32Uuids.serviceAuth &&
+            u != Bluepad32Uuids.customMappings,
       )) {
         chars[uuid] = _FakeBluetoothCharacteristic(
           remoteId: device.remoteId,
@@ -1802,6 +2145,212 @@ void main() {
       expect(client.state.isConnected, isFalse);
       await chars[Bluepad32Uuids.connectedDevices]!.disposeController();
     });
+
+    test(
+      'FL-CLI-01..06: FakeBluepad32GattTransport and Bluepad32Client AC06/AC0F synchronization, validation, fallback, and auth errors',
+      () async {
+        // FL-CLI-01: Default FakeBluepad32GattTransport seeds AC06=xbox and AC0F=28-byte Xbox default.
+        final FakeBluepad32GattTransport transport =
+            FakeBluepad32GattTransport();
+        final Bluepad32Client client =
+            Bluepad32Client.test(transport: transport);
+        addTearDown(client.dispose);
+
+        await client.connect();
+        expect(
+          client.state.mappings.type,
+          equals(GamepadMappingsType.xbox),
+        );
+        expect(
+          client.state.mappings.customMappings,
+          equals(CustomGamepadMappings.xboxDefault()),
+        );
+        expect(client.state.mappings.customMappings.isDefault, isTrue);
+
+        // FL-CLI-02: setCustomMappings writes 28 bytes to AC0F, promotes AC06 to custom (2), and updates state.
+        final CustomGamepadMappings swapped =
+            CustomGamepadMappings.xboxDefault().withSwappedSticks();
+        final bool customSuccess = await client.setCustomMappings(swapped);
+        expect(customSuccess, isTrue);
+        expect(
+          transport.lastWriteFor(Bluepad32Uuids.customMappings),
+          equals(swapped.toBytes()),
+        );
+        expect(
+          await transport.readCharacteristic(Bluepad32Uuids.mappings),
+          equals(<int>[GamepadMappingsType.custom.value]),
+        );
+        expect(
+          client.state.mappings.type,
+          equals(GamepadMappingsType.custom),
+        );
+        expect(
+          client.state.mappings.customMappings,
+          equals(swapped),
+        );
+        expect(client.state.mappings.customMappings.modifiedCount, equals(6));
+
+        // FL-CLI-03: setMappingsType(switchLayout) writes [1] to AC06 and preserves customMappings in AC0F.
+        await client.setMappingsType(GamepadMappingsType.switchLayout);
+        expect(
+          transport.lastWriteFor(Bluepad32Uuids.mappings),
+          equals(<int>[GamepadMappingsType.switchLayout.value]),
+        );
+        expect(
+          client.state.mappings.type,
+          equals(GamepadMappingsType.switchLayout),
+        );
+        expect(
+          client.state.mappings.customMappings,
+          equals(swapped),
+        );
+
+        // FL-CLI-04: FakeBluepad32GattTransport rejects malformed lengths (0x0d) and out-of-range fields (0x13).
+        await expectLater(
+          () => transport.writeCharacteristic(
+            Bluepad32Uuids.customMappings,
+            Uint8List(27),
+          ),
+          throwsA(
+            predicate<Object>(
+              (Object e) => e.toString().contains('0x0d'),
+            ),
+          ),
+        );
+        final Uint8List badFieldBytes = swapped.toBytes()..[0] = 4;
+        await expectLater(
+          () => transport.writeCharacteristic(
+            Bluepad32Uuids.customMappings,
+            badFieldBytes,
+          ),
+          throwsA(
+            predicate<Object>(
+              (Object e) => e.toString().contains('0x13'),
+            ),
+          ),
+        );
+        await expectLater(
+          () => transport.writeCharacteristic(
+            Bluepad32Uuids.mappings,
+            Uint8List.fromList(<int>[2, 0, 1]),
+          ),
+          throwsA(
+            predicate<Object>(
+              (Object e) => e.toString().contains('0x0d'),
+            ),
+          ),
+        );
+
+        // FL-CLI-05: Legacy firmware fallback when AC0F is missing on transport.
+        final _FakeGattBluetoothDevice legacyDevice =
+            _FakeGattBluetoothDevice(id: 'AA:BB:CC:DD:EE:99');
+        final Map<Guid, _FakeBluetoothCharacteristic> legacyChars =
+            <Guid, _FakeBluetoothCharacteristic>{};
+        for (final Guid uuid in Bluepad32Uuids.allCharacteristics.where(
+          (Guid u) => u != Bluepad32Uuids.customMappings,
+        )) {
+          legacyChars[uuid] = _FakeBluetoothCharacteristic(
+            remoteId: legacyDevice.remoteId,
+            serviceUuid: Bluepad32Uuids.service,
+            characteristicUuid: uuid,
+          );
+        }
+        legacyChars[Bluepad32Uuids.version]!.valueToRead =
+            utf8.encode('v4.4.0');
+        legacyChars[Bluepad32Uuids.maxConnections]!.valueToRead = <int>[4];
+        legacyChars[Bluepad32Uuids.bleEnabled]!.valueToRead = <int>[1];
+        legacyChars[Bluepad32Uuids.scanning]!.valueToRead = <int>[0];
+        legacyChars[Bluepad32Uuids.connectedDevices]!.valueToRead =
+            ConnectedController.empty(0).toBytes();
+        legacyChars[Bluepad32Uuids.mappings]!.valueToRead = <int>[0];
+        legacyChars[Bluepad32Uuids.allowlistEnabled]!.valueToRead = <int>[0];
+        legacyChars[Bluepad32Uuids.allowlistAddresses]!.valueToRead =
+            const <int>[];
+        legacyChars[Bluepad32Uuids.virtualDeviceEnabled]!.valueToRead =
+            <int>[1];
+        legacyChars[Bluepad32Uuids.serviceName]!.valueToRead =
+            utf8.encode('Legacy Node');
+        legacyChars[Bluepad32Uuids.serviceAuth]!.valueToRead = <int>[0];
+
+        legacyDevice.servicesToReturn = <BluetoothService>[
+          _FakeBluetoothService(
+            remoteId: legacyDevice.remoteId,
+            serviceUuid: Bluepad32Uuids.service,
+            characteristics: legacyChars.values.toList(),
+          ),
+        ];
+
+        final Bluepad32Client legacyClient =
+            Bluepad32Client(device: legacyDevice);
+        addTearDown(legacyClient.dispose);
+        await legacyClient.connect();
+        expect(legacyClient.state.isConnected, isTrue);
+        expect(
+          legacyClient.state.mappings.customMappings,
+          equals(CustomGamepadMappings.xboxDefault()),
+        );
+
+        // Writing custom mappings falls back to 29-byte atomic write on AC06 when AC0F is absent.
+        final CustomGamepadMappings switchPreset =
+            CustomGamepadMappings.switchPreset();
+        legacyChars[Bluepad32Uuids.mappings]!.valueToRead = <int>[
+          GamepadMappingsType.custom.value,
+          ...switchPreset.toBytes(),
+        ];
+        final bool fallbackOk =
+            await legacyClient.setCustomMappings(switchPreset);
+        expect(fallbackOk, isTrue);
+        expect(
+          legacyChars[Bluepad32Uuids.mappings]!.lastWrittenValue,
+          equals(<int>[
+            GamepadMappingsType.custom.value,
+            ...switchPreset.toBytes(),
+          ]),
+        );
+        expect(
+          legacyClient.state.mappings.type,
+          equals(GamepadMappingsType.custom),
+        );
+        expect(
+          legacyClient.state.mappings.customMappings,
+          equals(switchPreset),
+        );
+        await legacyChars[Bluepad32Uuids.connectedDevices]!.disposeController();
+
+        // FL-CLI-06: Auth failure (0x05) on AC0F write sets authStatus to required and populates errorMessage.
+        final FakeBluepad32GattTransport lockedTransport =
+            FakeBluepad32GattTransport(password: '654321');
+        final Bluepad32Client lockedClient =
+            Bluepad32Client.test(transport: lockedTransport);
+        addTearDown(lockedClient.dispose);
+        await lockedClient.connect();
+
+        final bool lockedWriteResult = await lockedClient.setCustomMappings(
+          CustomGamepadMappings.switchPreset(),
+        );
+        expect(lockedWriteResult, isFalse);
+        expect(
+          lockedClient.state.authStatus,
+          equals(Bluepad32AuthStatus.required),
+        );
+        expect(lockedClient.state.errorMessage, isNotNull);
+        expect(
+          lockedClient.state.errorMessage,
+          contains('Failed to update custom controller mappings'),
+        );
+
+        final bool unlocked = await lockedClient.authenticate('654321');
+        expect(unlocked, isTrue);
+        final bool unlockedWriteResult = await lockedClient.setCustomMappings(
+          CustomGamepadMappings.switchPreset(),
+        );
+        expect(unlockedWriteResult, isTrue);
+        expect(
+          lockedClient.state.mappings.customMappings,
+          equals(CustomGamepadMappings.switchPreset()),
+        );
+      },
+    );
   });
 }
 

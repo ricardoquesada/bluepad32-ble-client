@@ -3,9 +3,9 @@
 ///
 /// Coordinates connection establishment, MTU negotiation, GATT service
 /// discovery, two-phase `AC0E` password authentication probing (`AC01`/`AC0D`/`AC0E`
-/// public reads before `AC05` CCCD subscription and `AC02`–`AC09` protected reads),
+/// public reads before `AC05` CCCD subscription and `AC02`–`AC09` + `AC0F` protected reads),
 /// `AC05` notification streaming, and typed reads/writes across characteristics
-/// `AC01`–`AC0E`, while providing [FakeBluepad32GattTransport] for deterministic
+/// `AC01`–`AC0F`, while providing [FakeBluepad32GattTransport] for deterministic
 /// headless unit and widget testing.
 library;
 
@@ -37,7 +37,7 @@ abstract class Bluepad32GattTransport {
 
   /// Connects to the peripheral (negotiating MTU), discovers the Bluepad32 GATT
   /// service (`4627c4a4-ac00-46b9-b688-afc5c1bf7f63`), and locates characteristics
-  /// `AC01`–`AC0E` without writing to the `AC05` CCCD yet.
+  /// `AC01`–`AC0F` without writing to the `AC05` CCCD yet.
   Future<void> connectAndDiscover();
 
   /// Subscribes to `AC05` (`connectedDevices`) notifications after verifying
@@ -99,7 +99,7 @@ class _DeviceBluepad32GattTransport implements Bluepad32GattTransport {
       );
     }
 
-    // 3. Index characteristics AC01..AC0E by UUID.
+    // 3. Index characteristics AC01..AC0F by UUID.
     _characteristics.clear();
     for (final BluetoothCharacteristic characteristic
         in bluepadService.characteristics) {
@@ -277,6 +277,10 @@ class FakeBluepad32GattTransport implements Bluepad32GattTransport {
     setCharacteristicValue(
       Bluepad32Uuids.mappings,
       mappings.toBytes(),
+    );
+    setCharacteristicValue(
+      Bluepad32Uuids.customMappings,
+      mappings.customMappings.toBytes(),
     );
     setCharacteristicValue(
       Bluepad32Uuids.allowlistEnabled,
@@ -496,6 +500,66 @@ class FakeBluepad32GattTransport implements Bluepad32GattTransport {
       );
     }
 
+    if (uuid == Bluepad32Uuids.customMappings) {
+      if (payload.length != CustomGamepadMappings.byteLength) {
+        throw FlutterBluePlusException(
+          ErrorPlatform.fbp,
+          'writeCharacteristic',
+          0x0d,
+          'ATT_ERROR_INVALID_ATTRIBUTE_VALUE_LENGTH (0x0d)',
+        );
+      }
+      if (!CustomGamepadMappings.isValidPayload(payload)) {
+        throw FlutterBluePlusException(
+          ErrorPlatform.fbp,
+          'writeCharacteristic',
+          0x13,
+          'ATT_ERROR_VALUE_NOT_ALLOWED (0x13)',
+        );
+      }
+      _characteristicValues[Bluepad32Uuids.customMappings] = payload;
+      _characteristicValues[Bluepad32Uuids.mappings] =
+          Uint8List.fromList(<int>[GamepadMappingsType.custom.value]);
+      return;
+    }
+
+    if (uuid == Bluepad32Uuids.mappings) {
+      if (payload.length == 1) {
+        if (payload[0] >= GamepadMappingsType.values.length) {
+          throw FlutterBluePlusException(
+            ErrorPlatform.fbp,
+            'writeCharacteristic',
+            0x13,
+            'ATT_ERROR_VALUE_NOT_ALLOWED (0x13)',
+          );
+        }
+        _characteristicValues[Bluepad32Uuids.mappings] = payload;
+        return;
+      }
+      if (payload.length == 1 + CustomGamepadMappings.byteLength) {
+        if (payload[0] != GamepadMappingsType.custom.value ||
+            !CustomGamepadMappings.isValidPayload(payload, 1)) {
+          throw FlutterBluePlusException(
+            ErrorPlatform.fbp,
+            'writeCharacteristic',
+            0x13,
+            'ATT_ERROR_VALUE_NOT_ALLOWED (0x13)',
+          );
+        }
+        _characteristicValues[Bluepad32Uuids.customMappings] =
+            Uint8List.fromList(payload.sublist(1));
+        _characteristicValues[Bluepad32Uuids.mappings] =
+            Uint8List.fromList(<int>[GamepadMappingsType.custom.value]);
+        return;
+      }
+      throw FlutterBluePlusException(
+        ErrorPlatform.fbp,
+        'writeCharacteristic',
+        0x0d,
+        'ATT_ERROR_INVALID_ATTRIBUTE_VALUE_LENGTH (0x0d)',
+      );
+    }
+
     _characteristicValues[uuid] = payload;
   }
 
@@ -598,20 +662,21 @@ class Bluepad32Client extends ChangeNotifier {
     }
   }
 
-  /// Reads an optional characteristic (`AC0D` or `AC0E`), returning `const <int>[]`
-  /// if the characteristic is absent on legacy firmware.
+  /// Reads an optional characteristic (`AC0D`, `AC0E`, or `AC0F`), returning
+  /// `const <int>[]` if the characteristic is absent on legacy firmware.
   Future<List<int>> _readOptionalCharacteristic(Guid uuid) async {
     try {
       return await _transport.readCharacteristic(uuid);
     } on StateError catch (e) {
-      if (e.message.contains('is not available')) {
+      if (e.message.contains('is not available') ||
+          e.message.contains('not found')) {
         return const <int>[];
       }
       rethrow;
     }
   }
 
-  /// Connects to the Bluepad32 peripheral, negotiates MTU, discovers `AC01`–`AC0E`,
+  /// Connects to the Bluepad32 peripheral, negotiates MTU, discovers `AC01`–`AC0F`,
   /// checks `AC0E` authentication status, and hydrates state via [refreshAll].
   Future<void> connect() async {
     _updateState(
@@ -671,8 +736,8 @@ class Bluepad32Client extends ChangeNotifier {
   /// Reads public characteristics (`AC01`, `AC0D`, `AC0E`) first; if the
   /// peripheral is locked ([Bluepad32AuthStatus.required]), updates [state] and
   /// returns early without touching protected characteristics `AC02`–`AC09` or
-  /// enabling `AC05` notifications. When open or authenticated, enables `AC05`
-  /// notifications and reads `AC02` through `AC09`.
+  /// `AC0F` or enabling `AC05` notifications. When open or authenticated, enables
+  /// `AC05` notifications and reads `AC02` through `AC09` plus `AC0F`.
   Future<void> refreshAll() async {
     _updateState(
       _state.copyWith(
@@ -702,7 +767,7 @@ class Bluepad32Client extends ChangeNotifier {
       final Bluepad32AuthStatus authStatus =
           Bluepad32AuthStatus.fromBytes(authBytes);
 
-      // 2. If locked, update public fields and return early before AC05 CCCD or AC02..AC09.
+      // 2. If locked, update public fields and return early before AC05 CCCD or AC02..AC09 / AC0F.
       if (authStatus == Bluepad32AuthStatus.required) {
         _updateState(
           _state.copyWith(
@@ -719,7 +784,7 @@ class Bluepad32Client extends ChangeNotifier {
         return;
       }
 
-      // 3. Session is open or authenticated: enable AC05 notifications and read AC02..AC09.
+      // 3. Session is open or authenticated: enable AC05 notifications and read AC02..AC09 + AC0F.
       await _transport.enableNotifications();
 
       // AC02: Max Supported Connections (uint8_t)
@@ -749,10 +814,21 @@ class Bluepad32Client extends ChangeNotifier {
         maxConnections: maxConnections,
       );
 
-      // AC06: Controller Mappings Type (uint8_t)
+      // AC06: Controller Mappings Type (uint8_t) & AC0F: Custom Mappings (28-byte uni_gamepad_mappings_t)
       final List<int> mappingsBytes =
           await _transport.readCharacteristic(Bluepad32Uuids.mappings);
-      final GamepadMappings mappings = GamepadMappings.fromBytes(mappingsBytes);
+      final GamepadMappings baseMappings =
+          GamepadMappings.fromBytes(mappingsBytes);
+      final List<int> customMappingsBytes =
+          await _readOptionalCharacteristic(Bluepad32Uuids.customMappings);
+      final GamepadMappings mappings = customMappingsBytes.length >=
+                  CustomGamepadMappings.byteLength &&
+              CustomGamepadMappings.isValidPayload(customMappingsBytes)
+          ? baseMappings.copyWith(
+              customMappings:
+                  CustomGamepadMappings.fromBytes(customMappingsBytes),
+            )
+          : baseMappings;
 
       // AC07: Allowlist Enforced (uint8_t)
       final List<int> allowlistEnabledBytes =
@@ -795,6 +871,9 @@ class Bluepad32Client extends ChangeNotifier {
       _updateState(
         _state.copyWith(
           isRefreshing: false,
+          authStatus: _isAuthenticationError(e)
+              ? Bluepad32AuthStatus.required
+              : _state.authStatus,
           errorMessage: 'Failed to read Bluepad32 state: ${_formatError(e)}',
         ),
       );
@@ -1016,14 +1095,30 @@ class Bluepad32Client extends ChangeNotifier {
   /// Alias for [setControllerScanning].
   Future<void> setScanningEnabled(bool enabled) => setControllerScanning(enabled);
 
-  /// Sets the active controller button mapping layout on the firmware (`AC06`).
-  Future<void> setMappingsType(GamepadMappingsType type) async {
+  /// Sets the active controller button mapping layout on the firmware (`AC06`),
+  /// or uploads [customMappings] when provided.
+  Future<void> setMappingsType(
+    GamepadMappingsType type, {
+    CustomGamepadMappings? customMappings,
+  }) async {
+    if (customMappings != null) {
+      await setCustomMappings(customMappings);
+      return;
+    }
     final GamepadMappings updatedMappings = _state.mappings.copyWith(type: type);
     await setMappings(updatedMappings);
   }
 
-  /// Writes [mappings] to `AC06` and updates [state].
-  Future<void> setMappings(GamepadMappings mappings) async {
+  /// Writes [mappings] to `AC06` (or uploads [customMappings] via [setCustomMappings])
+  /// and updates [state].
+  Future<void> setMappings(
+    GamepadMappings mappings, {
+    CustomGamepadMappings? customMappings,
+  }) async {
+    if (customMappings != null) {
+      await setCustomMappings(customMappings);
+      return;
+    }
     try {
       await _transport.writeCharacteristic(
         Bluepad32Uuids.mappings,
@@ -1038,9 +1133,69 @@ class Bluepad32Client extends ChangeNotifier {
     } catch (e) {
       _updateState(
         _state.copyWith(
+          authStatus: _isAuthenticationError(e)
+              ? Bluepad32AuthStatus.required
+              : _state.authStatus,
           errorMessage: 'Failed to update controller mappings: ${_formatError(e)}',
         ),
       );
+    }
+  }
+
+  /// Uploads a 28-byte [customMappings] matrix to `AC0F` (`customMappings`),
+  /// falling back to a 29-byte atomic write (`[2, ...28B...]`) on `AC06`
+  /// (`mappings`) when connected to firmware that does not expose `AC0F`.
+  ///
+  /// Returns `true` on success and updates [Bluepad32State.mappings] with
+  /// [GamepadMappingsType.custom] and [customMappings]. On failure, sets
+  /// [Bluepad32State.errorMessage] (and transitions [Bluepad32State.authStatus]
+  /// to [Bluepad32AuthStatus.required] on `0x05` authentication errors) and
+  /// returns `false`.
+  Future<bool> setCustomMappings(CustomGamepadMappings customMappings) async {
+    final Uint8List payload = customMappings.toBytes();
+    try {
+      try {
+        await _transport.writeCharacteristic(
+          Bluepad32Uuids.customMappings,
+          payload,
+        );
+      } on StateError catch (e) {
+        if (e.message.contains('is not available') ||
+            e.message.contains('not found')) {
+          final Uint8List atomicPayload = Uint8List.fromList(<int>[
+            GamepadMappingsType.custom.value,
+            ...payload,
+          ]);
+          await _transport.writeCharacteristic(
+            Bluepad32Uuids.mappings,
+            atomicPayload,
+          );
+        } else {
+          rethrow;
+        }
+      }
+
+      _updateState(
+        _state.copyWith(
+          mappings: _state.mappings.copyWith(
+            type: GamepadMappingsType.custom,
+            customMappings: customMappings,
+          ),
+          clearError: true,
+        ),
+      );
+      return true;
+    } catch (e) {
+      _updateState(
+        _state.copyWith(
+          authStatus: _isAuthenticationError(e)
+              ? Bluepad32AuthStatus.required
+              : _state.authStatus,
+          errorMessage:
+              'Failed to update custom controller mappings: ${_formatError(e)}',
+        ),
+      );
+      return false;
     }
   }
 
@@ -1258,6 +1413,24 @@ class Bluepad32Client extends ChangeNotifier {
     }
     final String message = error.toString().toLowerCase();
     return message.contains('disconnect') || message.contains('not connected');
+  }
+
+  /// Returns `true` if [error] represents an `ATT_ERROR_INSUFFICIENT_AUTHENTICATION`
+  /// (`0x05` / `0xfe05`) rejection on a password-protected peripheral (`AC0E`).
+  bool _isAuthenticationError(Object error) {
+    if (error is FlutterBluePlusException) {
+      if (error.code == 0x05 || error.code == 0xfe05) {
+        return true;
+      }
+      final String desc = (error.description ?? '').toLowerCase();
+      if (desc.contains('insufficient_authentication') ||
+          desc.contains('0x05')) {
+        return true;
+      }
+    }
+    final String message = error.toString().toLowerCase();
+    return message.contains('insufficient_authentication') ||
+        message.contains('0x05');
   }
 
   /// Extracts a human-readable message from a [FlutterBluePlusException] or
