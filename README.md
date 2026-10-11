@@ -112,6 +112,18 @@ git push origin v1.2.0
 
 The workflow extracts the semantic version from the tag (`v1.2.0` -> `--build-name=1.2.0`) and derives a monotonically increasing integer build number (`--build-number=${{ github.run_number }}`, or `N` if tagged with an explicit `+N` suffix such as `v1.2.0+42`).
 
+### Manual Dry-Run (`workflow_dispatch`)
+
+To test the multi-platform release build pipeline without creating a GitHub tag or publishing a GitHub Release, trigger the workflow manually:
+
+* **GitHub Web UI:** Go to **Actions -> Release -> Run workflow**, select the `main` branch, and click **Run workflow**.
+* **GitHub CLI (`gh`):**
+  ```bash
+  gh workflow run release.yml --ref main
+  ```
+
+Manual `workflow_dispatch` runs build all platform targets with fallback version `1.0.0+${{ github.run_number }}` and attach the packaged binaries as downloadable workflow run artifacts on the GitHub Actions run summary page instead of creating a GitHub Release.
+
 ### Published Release Assets
 
 | Platform | Release Asset | Notes |

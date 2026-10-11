@@ -2,7 +2,9 @@
 # Multi-Platform Release Automation Workflow (bluepad32-ble-client)
 # ==============================================================================
 # Triggered automatically whenever a semantic version tag matching `v*` (e.g.,
-# `v1.2.0` or `v1.2.0+42`) is pushed to GitHub.
+# `v1.2.0` or `v1.2.0+42`) is pushed to GitHub, or manually via
+# `workflow_dispatch` for a dry-run build that attaches downloadable workflow
+# artifacts without creating a GitHub Release.
 #
 # Architecture & Matrix Overview:
 #   - Builds all 6 `flutter_blue_plus` target platforms concurrently across 7
@@ -20,6 +22,7 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -378,3 +381,20 @@ jobs:
             src/${{ matrix.asset_name }}.apk
             src/${{ matrix.asset_name }}.aab
             src/${{ matrix.asset_name }}.ipa
+
+      # --- UPLOAD WORKFLOW ARTIFACTS (MANUAL DRY-RUN) ---
+      # When triggered manually via `workflow_dispatch`, attach the built
+      # binaries to the GitHub Actions run summary page without creating a
+      # GitHub Release.
+      - name: Upload Workflow Artifacts (Manual Dry-Run)
+        uses: actions/upload-artifact@v4
+        if: github.event_name == 'workflow_dispatch'
+        with:
+          name: ${{ matrix.asset_name }}
+          path: |
+            src/${{ matrix.asset_name }}.tar.gz
+            src/${{ matrix.asset_name }}.zip
+            src/${{ matrix.asset_name }}.apk
+            src/${{ matrix.asset_name }}.aab
+            src/${{ matrix.asset_name }}.ipa
+          if-no-files-found: error
