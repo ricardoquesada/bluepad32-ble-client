@@ -1,13 +1,13 @@
-# Project-level configuration.
+# Project-level configuration for the Linux GTK desktop runner.
 cmake_minimum_required(VERSION 3.10)
 project(runner LANGUAGES CXX)
 
-# The name of the executable created for the application. Change this to change
-# the on-disk name of your application.
-set(BINARY_NAME "flutter_blue_plus_example")
-# The unique GTK application identifier for this application. See:
-# https://wiki.gnome.org/HowDoI/ChooseApplicationID
-set(APPLICATION_ID "com.lib.flutter_blue_plus_example")
+# The name of the ELF executable created in `build/linux/<arch>/release/bundle/bluepad32`.
+# Change this to change the on-disk name of the application.
+set(BINARY_NAME "bluepad32")
+# The unique reverse-DNS GTK/D-Bus application identifier (unified across platforms).
+# See: https://wiki.gnome.org/HowDoI/ChooseApplicationID
+set(APPLICATION_ID "moe.retro.bluepad32")
 
 # Explicitly opt in to modern CMake behaviors to avoid warnings with recent
 # versions of CMake.

@@ -1,8 +1,19 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  macOS Release App Sandbox Entitlements for Bluepad32.app.
+  - `com.apple.security.app-sandbox`: Enables the macOS App Sandbox.
+  - `com.apple.security.device.bluetooth`: Required so `sandboxd` allows
+    `CBCentralManager` (CoreBluetooth / `flutter_blue_plus_darwin`) access in
+    Release builds. Note: When re-signing for Apple Notary Service in
+    `.github/workflows/release.yml`, apply `--entitlements` ONLY to the outer
+    `Bluepad32.app` bundle, never to nested `.dylib` or `.framework` bundles.
+-->
 <plist version="1.0">
 <dict>
 	<key>com.apple.security.app-sandbox</key>
+	<true/>
+	<key>com.apple.security.device.bluetooth</key>
 	<true/>
 </dict>
 </plist>

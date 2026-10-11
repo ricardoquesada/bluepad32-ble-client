@@ -2,10 +2,18 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>CADisableMinimumFrameDurationOnPhone</key>
+	<true/>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<!--
+	  User-visible home screen name is `Bluepad32`, while `EXECUTABLE_NAME` /
+	  `PRODUCT_NAME` in `Runner.xcodeproj` remains `Runner` so Xcode outputs
+	  `build/ios/iphoneos/Runner.app` (required by `flutter build ipa` and the
+	  unsigned `Payload/Runner.app` fallback in `.github/workflows/release.yml`).
+	-->
 	<key>CFBundleDisplayName</key>
-	<string>Flutter Blue Plus Example</string>
+	<string>Bluepad32</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -13,7 +21,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>flutter_blue_plus_example</string>
+	<string>bluepad32_client</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -24,10 +32,32 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<!-- Both iOS 13+ (`NSBluetoothAlwaysUsageDescription`) and iOS 12 (`NSBluetoothPeripheralUsageDescription`) keys are provided for CoreBluetooth (`flutter_blue_plus`). -->
 	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>We need BT access because it's a BT App.</string>
+	<string>Bluepad32 BLE Client uses Bluetooth to discover, monitor, and configure Bluepad32 devices.</string>
 	<key>NSBluetoothPeripheralUsageDescription</key>
-	<string>We need BT access because it's a BT App.</string>
+	<string>Bluepad32 BLE Client uses Bluetooth to discover, monitor, and configure Bluepad32 devices.</string>
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<false/>
+		<key>UISceneConfigurations</key>
+		<dict>
+			<key>UIWindowSceneSessionRoleApplication</key>
+			<array>
+				<dict>
+					<key>UISceneClassName</key>
+					<string>UIWindowScene</string>
+					<key>UISceneConfigurationName</key>
+					<string>flutter</string>
+					<key>UISceneDelegateClassName</key>
+					<string>FlutterSceneDelegate</string>
+					<key>UISceneStoryboardFile</key>
+					<string>Main</string>
+				</dict>
+			</array>
+		</dict>
+	</dict>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>
@@ -47,9 +77,5 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
-	<key>CADisableMinimumFrameDurationOnPhone</key>
-	<true/>
-	<key>UIApplicationSupportsIndirectInputEvents</key>
-	<true/>
 </dict>
 </plist>

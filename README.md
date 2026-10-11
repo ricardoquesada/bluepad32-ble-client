@@ -20,8 +20,9 @@ Built with Flutter and [`flutter_blue_plus`](https://pub.dev/packages/flutter_bl
 
 * **Android** (API 21+)
 * **iOS** (iOS 12+)
-* **macOS** (macOS 10.14+)
-* **Linux** (requires `bluez`)
+* **macOS** (macOS 10.14+, Universal `x86_64` + `arm64`)
+* **Linux** (`x64` and `arm64`, requires `bluez`)
+* **Windows** (Windows 10+ `x64` via WinRT BLE)
 * **Web** (experimental, requires a browser with Web Bluetooth support such as Chrome or Edge)
 
 ## Building and Deploying
@@ -47,6 +48,9 @@ flutter run -d macos
 # Run on Linux desktop
 flutter run -d linux
 
+# Run on Windows desktop
+flutter run -d windows
+
 # Run on Chrome (Web Bluetooth)
 flutter run -d chrome
 ```
@@ -57,6 +61,7 @@ flutter run -d chrome
 
     ```bash
     flutter build apk --release
+    flutter build appbundle --release
     flutter install -d <android_device_id>
     ```
 
@@ -73,14 +78,21 @@ flutter run -d chrome
 
     ```bash
     flutter build macos --release
-    open build/macos/Build/Products/Release/flutter_blue_plus_example.app
+    open build/macos/Build/Products/Release/Bluepad32.app
     ```
 
 * **Linux:**
 
     ```bash
     flutter build linux --release
-    ./build/linux/x64/release/bundle/flutter_blue_plus_example
+    ./build/linux/x64/release/bundle/bluepad32
+    ```
+
+* **Windows:**
+
+    ```bash
+    flutter build windows --release
+    .\build\windows\x64\runner\Release\bluepad32.exe
     ```
 
 * **Web:**
@@ -88,6 +100,51 @@ flutter run -d chrome
     ```bash
     flutter build web --release
     ```
+
+## Creating a Release
+
+Releases are built and published automatically by [`.github/workflows/release.yml`](.github/workflows/release.yml) whenever a `v*` tag is pushed to GitHub:
+
+```bash
+git tag v1.2.0
+git push origin v1.2.0
+```
+
+The workflow extracts the semantic version from the tag (`v1.2.0` -> `--build-name=1.2.0`) and derives a monotonically increasing integer build number (`--build-number=${{ github.run_number }}`, or `N` if tagged with an explicit `+N` suffix such as `v1.2.0+42`).
+
+### Published Release Assets
+
+| Platform | Release Asset | Notes |
+| :--- | :--- | :--- |
+| **Android (APK)** | `bluepad32-android.apk` | Direct sideloadable Android package |
+| **Android (App Bundle)** | `bluepad32-android.aab` | Google Play Console upload bundle |
+| **iOS** | `bluepad32-ios.ipa` | App Store Connect (`Transporter`) / sideload IPA archive |
+| **macOS (Universal)** | `bluepad32-macos-universal.zip` | Universal (`x86_64` + `arm64`) `Bluepad32.app`, signed (`Developer ID Application`), notarized, and stapled |
+| **Linux (x64)** | `bluepad32-linux-amd64.tar.gz` | GTK desktop bundle (`bluepad32`) for `x86_64` |
+| **Linux (ARM64)** | `bluepad32-linux-arm64.tar.gz` | GTK desktop bundle (`bluepad32`) for `aarch64` |
+| **Windows (x64)** | `bluepad32-windows-amd64.zip` | Win32/WinRT desktop bundle (`bluepad32.exe`) for `x86_64` |
+| **Web** | `bluepad32-web.tar.gz` | Static Web Bluetooth PWA bundle |
+
+### GitHub Actions Secrets for Code Signing & Notarization
+
+* **macOS Code Signing & Apple Notary Service (Required for macOS release job):**
+  * `MACOS_CERTIFICATE`: Base64-encoded `Developer ID Application` `.p12` certificate.
+  * `MACOS_CERTIFICATE_PWD`: Password for the macOS `.p12` certificate.
+  * `KEYCHAIN_PWD`: Temporary CI keychain password.
+  * `APPLE_ID`: Apple ID email address for `xcrun notarytool`.
+  * `APPLE_PASSWORD`: App-specific password for `xcrun notarytool`.
+  * `APPLE_TEAM_ID`: 10-character Apple Developer Team ID.
+* **Android Release Keystore Signing (Optional; falls back to debug signing if omitted):**
+  * `ANDROID_KEYSTORE_BASE64`: Base64-encoded Android upload keystore (`.jks` or `.keystore`).
+  * `ANDROID_STORE_PASSWORD`: Keystore password.
+  * `ANDROID_KEY_ALIAS`: Key alias inside the keystore.
+  * `ANDROID_KEY_PASSWORD`: Private key password.
+* **iOS App Store Distribution Signing (Optional; falls back to unsigned `.ipa` if omitted):**
+  * `IOS_CERTIFICATE`: Base64-encoded `Apple Distribution` `.p12` certificate.
+  * `IOS_CERTIFICATE_PWD`: Password for `IOS_CERTIFICATE`.
+  * `IOS_PROVISION_PROFILE`: Base64-encoded App Store `.mobileprovision` profile for `moe.retro.bluepad32`.
+  * `KEYCHAIN_PWD`: Temporary CI keychain password (shared with macOS).
+  * `APPLE_TEAM_ID`: 10-character Apple Developer Team ID (shared with macOS).
 
 ### Running Tests & Static Analysis
 

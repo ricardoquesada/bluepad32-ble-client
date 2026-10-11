@@ -1,11 +1,11 @@
 {
-    "name": "flutter_blue_plus_example",
-    "short_name": "flutter_blue_plus_example",
+    "name": "Bluepad32",
+    "short_name": "Bluepad32",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#1E88E5",
+    "theme_color": "#1E88E5",
+    "description": "Client for Bluepad32 / Unijoysticle devices",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

@@ -1,0 +1,380 @@
+# ==============================================================================
+# Multi-Platform Release Automation Workflow (bluepad32-ble-client)
+# ==============================================================================
+# Triggered automatically whenever a semantic version tag matching `v*` (e.g.,
+# `v1.2.0` or `v1.2.0+42`) is pushed to GitHub.
+#
+# Architecture & Matrix Overview:
+#   - Builds all 6 `flutter_blue_plus` target platforms concurrently across 7
+#     matrix jobs: Android (.apk + .aab), iOS (.ipa), macOS Universal
+#     (x86_64 + arm64 .app), Linux (x64 + arm64), Windows (x64), and Web.
+#   - `defaults.run.working-directory: src` scopes all `run:` shell commands to
+#     the Flutter project root (`src/`). Note that `uses:` actions (such as
+#     `softprops/action-gh-release@v2`) ignore `defaults.run.working-directory`
+#     and resolve file globs relative to `$GITHUB_WORKSPACE`.
+# ==============================================================================
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: src
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: android
+            os: ubuntu-24.04
+            asset_name: bluepad32-android
+          - target: ios
+            os: macos-latest
+            asset_name: bluepad32-ios
+          - target: macos
+            os: macos-latest
+            asset_name: bluepad32-macos-universal
+          - target: linux-amd64
+            os: ubuntu-24.04
+            linux_arch: x64
+            asset_name: bluepad32-linux-amd64
+          - target: linux-arm64
+            os: ubuntu-24.04-arm
+            linux_arch: arm64
+            asset_name: bluepad32-linux-arm64
+          - target: windows-amd64
+            os: windows-latest
+            asset_name: bluepad32-windows-amd64
+          - target: web
+            os: ubuntu-24.04
+            asset_name: bluepad32-web
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Google Play Console and Apple App Store Connect reject store uploads if
+      # the integer build number (`versionCode` on Android, `CFBundleVersion` on
+      # iOS/macOS) has already been used. We strip the leading `v`, validate a
+      # semantic version string (falling back to `1.0.0`), and default the integer
+      # build number to `${{ github.run_number }}` unless an explicit `+N` build
+      # suffix is encoded in the git tag (e.g., `v1.2.0+42`).
+      - name: Extract version from git tag
+        id: version
+        shell: bash
+        run: |
+          RAW_TAG="${GITHUB_REF_NAME#v}"
+          BUILD_NAME="${RAW_TAG%%+*}"
+          if [[ ! "$BUILD_NAME" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            BUILD_NAME="1.0.0"
+          fi
+          if [[ "$RAW_TAG" == *"+"* ]]; then
+            BUILD_NUMBER="${RAW_TAG#*+}"
+          else
+            BUILD_NUMBER="${{ github.run_number }}"
+          fi
+          echo "build_name=$BUILD_NAME" >> "$GITHUB_OUTPUT"
+          echo "build_number=$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "Building version $BUILD_NAME+$BUILD_NUMBER"
+
+      - name: Set up Java 17 (Android)
+        if: matrix.target == 'android'
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
+      - name: Install Linux Desktop Dependencies
+        if: startsWith(matrix.target, 'linux-')
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: "stable"
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      # --- ANDROID ---
+      # Produces both a sideloadable APK (`bluepad32-android.apk`) and a Google
+      # Play App Bundle (`bluepad32-android.aab`). When `ANDROID_KEYSTORE_BASE64`
+      # is configured in GitHub Secrets, it is decoded to `$RUNNER_TEMP` and
+      # passed via `ANDROID_KEYSTORE_PATH` to `src/android/app/build.gradle`.
+      # When absent, `build.gradle` (`hasReleaseKeystore`) automatically falls
+      # back to `signingConfigs.debug` so unconfigured forks still build cleanly.
+      - name: Build & Package (Android APK + AppBundle)
+        if: matrix.target == 'android'
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "Decoding Android release keystore from secrets..."
+            echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release-keystore.jks"
+            export ANDROID_KEYSTORE_PATH="$RUNNER_TEMP/release-keystore.jks"
+          else
+            echo "No ANDROID_KEYSTORE_BASE64 secret configured; falling back to debug signing."
+          fi
+
+          flutter build apk --release \
+            --build-name="${{ steps.version.outputs.build_name }}" \
+            --build-number="${{ steps.version.outputs.build_number }}"
+          flutter build appbundle --release \
+            --build-name="${{ steps.version.outputs.build_name }}" \
+            --build-number="${{ steps.version.outputs.build_number }}"
+
+          cp build/app/outputs/flutter-apk/app-release.apk "${{ matrix.asset_name }}.apk"
+          cp build/app/outputs/bundle/release/app-release.aab "${{ matrix.asset_name }}.aab"
+          rm -f "$RUNNER_TEMP/release-keystore.jks"
+
+      # --- IOS ---
+      # Supports two modes:
+      #   1. Signed App Store Connect IPA: When `IOS_CERTIFICATE` and
+      #      `IOS_PROVISION_PROFILE` secrets are present, imports the signing
+      #      identity into a temporary keychain, extracts the provisioning
+      #      profile UUID and Name via `security cms -D` + `PlistBuddy`, writes
+      #      `ExportOptions.plist`, and runs `flutter build ipa --release`.
+      #      IMPORTANT: The `cat <<EOF > ExportOptions.plist` heredoc lines
+      #      (`<?xml ...` through `EOF`) MUST stay aligned to the 10-space YAML
+      #      `run: |` block margin (not indented inside the `if` block) so YAML
+      #      strips all leading spaces and places `<?xml` and `EOF` at column 0.
+      #   2. Unsigned IPA Fallback: When iOS secrets are omitted, runs
+      #      `flutter build ios --release --no-codesign` and packages
+      #      `build/ios/iphoneos/Runner.app` into `Payload/Runner.app` inside a
+      #      standard `.ipa` zip archive for sideloading tools.
+      - name: Build & Package (iOS IPA)
+        if: matrix.target == 'ios'
+        env:
+          IOS_CERTIFICATE: ${{ secrets.IOS_CERTIFICATE }}
+          IOS_CERTIFICATE_PWD: ${{ secrets.IOS_CERTIFICATE_PWD }}
+          IOS_PROVISION_PROFILE: ${{ secrets.IOS_PROVISION_PROFILE }}
+          KEYCHAIN_PWD: ${{ secrets.KEYCHAIN_PWD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [ -n "$IOS_CERTIFICATE" ] && [ -n "$IOS_PROVISION_PROFILE" ]; then
+            echo "Configuring iOS distribution signing..."
+            KEYCHAIN_PASS="${KEYCHAIN_PWD:-temp_keychain_pass}"
+            security create-keychain -p "$KEYCHAIN_PASS" build.keychain
+            security default-keychain -s build.keychain
+            security unlock-keychain -p "$KEYCHAIN_PASS" build.keychain
+            security set-keychain-settings -t 3600 -u build.keychain
+
+            echo "$IOS_CERTIFICATE" | base64 --decode > ios_cert.p12
+            security import ios_cert.p12 -k build.keychain -P "$IOS_CERTIFICATE_PWD" -T /usr/bin/codesign
+            security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASS" build.keychain
+
+            mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+            echo "$IOS_PROVISION_PROFILE" | base64 --decode > profile.mobileprovision
+            PROFILE_UUID=$(/usr/libexec/PlistBuddy -c "Print UUID" /dev/stdin <<< $(/usr/bin/security cms -D -i profile.mobileprovision))
+            PROFILE_NAME=$(/usr/libexec/PlistBuddy -c "Print Name" /dev/stdin <<< $(/usr/bin/security cms -D -i profile.mobileprovision))
+            cp profile.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/"$PROFILE_UUID.mobileprovision"
+
+            cat <<EOF > ExportOptions.plist
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>method</key>
+              <string>app-store-connect</string>
+              <key>teamID</key>
+              <string>${APPLE_TEAM_ID}</string>
+              <key>signingStyle</key>
+              <string>manual</string>
+              <key>provisioningProfiles</key>
+              <dict>
+                  <key>moe.retro.bluepad32</key>
+                  <string>${PROFILE_NAME}</string>
+              </dict>
+          </dict>
+          </plist>
+          EOF
+
+            flutter build ipa --release \
+              --build-name="${{ steps.version.outputs.build_name }}" \
+              --build-number="${{ steps.version.outputs.build_number }}" \
+              --export-options-plist=ExportOptions.plist
+
+            cp build/ios/ipa/*.ipa "${{ matrix.asset_name }}.ipa"
+            rm -f ios_cert.p12 profile.mobileprovision ExportOptions.plist
+            security delete-keychain build.keychain || true
+          else
+            echo "No iOS distribution secrets configured; building unsigned IPA..."
+            flutter build ios --release --no-codesign \
+              --build-name="${{ steps.version.outputs.build_name }}" \
+              --build-number="${{ steps.version.outputs.build_number }}"
+            mkdir -p build/ios/ipa/Payload
+            cp -R build/ios/iphoneos/Runner.app build/ios/ipa/Payload/
+            (cd build/ios/ipa && zip -qry "${GITHUB_WORKSPACE}/src/${{ matrix.asset_name }}.ipa" Payload)
+          fi
+
+      # --- MACOS ---
+      # Builds a Universal (`x86_64` + `arm64`) `Bluepad32.app` bundle and
+      # performs inside-out Developer ID Application signing, Apple Notary
+      # Service submission, and ticket stapling:
+      #   1. Nested `.dylib` and `.framework` bundles under `Contents/Frameworks`
+      #      (`FlutterMacOS.framework`, `App.framework`,
+      #      `flutter_blue_plus_darwin.framework`) are signed first with
+      #      Hardened Runtime (`--options runtime --timestamp`) and WITHOUT
+      #      `--entitlements` (Apple Notary Service rejects nested frameworks
+      #      that carry App Sandbox entitlements).
+      #   2. The outer `Bluepad32.app` bundle is signed with
+      #      `--entitlements macos/Runner/Release.entitlements` to preserve
+      #      `com.apple.security.app-sandbox` and
+      #      `com.apple.security.device.bluetooth`.
+      #   3. Both `notarize.zip` and the final release archive MUST be created
+      #      with `ditto -c -k --keepParent` (never `zip -r`), because standard
+      #      `zip -r` dereferences `FlutterMacOS.framework` symbolic links
+      #      (`Versions/Current -> A`) into duplicate files and breaks the
+      #      cryptographic bundle seal.
+      - name: Build (macOS Universal)
+        if: matrix.target == 'macos'
+        run: |
+          flutter build macos --release \
+            --build-name="${{ steps.version.outputs.build_name }}" \
+            --build-number="${{ steps.version.outputs.build_number }}"
+          lipo -archs build/macos/Build/Products/Release/Bluepad32.app/Contents/MacOS/Bluepad32
+
+      - name: Code Sign and Notarize (macOS)
+        if: matrix.target == 'macos'
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PWD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
+          KEYCHAIN_PWD: ${{ secrets.KEYCHAIN_PWD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          APP_PATH="build/macos/Build/Products/Release/Bluepad32.app"
+
+          # Create and configure temporary CI keychain
+          security create-keychain -p "$KEYCHAIN_PWD" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "$KEYCHAIN_PWD" build.keychain
+          security set-keychain-settings -t 3600 -u build.keychain
+
+          # Decode and import Developer ID Application certificate
+          echo "$MACOS_CERTIFICATE" | base64 --decode > certificate.p12
+          security import certificate.p12 -k build.keychain -P "$MACOS_CERTIFICATE_PWD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PWD" build.keychain
+
+          # Resolve the Developer ID Application signing identity
+          IDENTITY=$(security find-identity -v -p codesigning | grep "Developer ID Application" | head -1 | awk -F '"' '{print $2}')
+
+          if [ -z "$IDENTITY" ]; then
+            echo "No Developer ID Application identity found. Listing all identities:"
+            security find-identity -v -p codesigning
+            exit 1
+          fi
+
+          echo "Signing with identity: $IDENTITY"
+
+          # 1. Sign nested dylibs and frameworks inside-out (without app sandbox entitlements)
+          if [ -d "$APP_PATH/Contents/Frameworks" ]; then
+            find "$APP_PATH/Contents/Frameworks" -name "*.dylib" -exec \
+              /usr/bin/codesign --force --options runtime --timestamp --sign "$IDENTITY" {} \;
+            find "$APP_PATH/Contents/Frameworks" -maxdepth 1 -name "*.framework" -exec \
+              /usr/bin/codesign --force --options runtime --timestamp --sign "$IDENTITY" {} \;
+          fi
+
+          # 2. Sign the outer .app bundle with Release.entitlements (App Sandbox + Bluetooth)
+          /usr/bin/codesign --force --options runtime --timestamp \
+            --entitlements macos/Runner/Release.entitlements \
+            --sign "$IDENTITY" "$APP_PATH" -v
+
+          # Verify strict signature integrity across the entire bundle hierarchy
+          /usr/bin/codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+
+          # Create symlink-preserving zip for notarization using ditto
+          ditto -c -k --keepParent "$APP_PATH" notarize.zip
+
+          # Submit to Apple Notary Service and block until notarization completes
+          xcrun notarytool submit notarize.zip \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait
+
+          # Staple the notarization ticket directly to the .app bundle for offline Gatekeeper verification
+          xcrun stapler staple "$APP_PATH"
+          xcrun stapler validate "$APP_PATH"
+
+          # Cleanup temporary signing artifacts
+          rm -f certificate.p12 notarize.zip
+          security delete-keychain build.keychain || true
+
+      - name: Package (macOS)
+        if: matrix.target == 'macos'
+        run: |
+          ditto -c -k --keepParent \
+            build/macos/Build/Products/Release/Bluepad32.app \
+            "${{ matrix.asset_name }}.zip"
+
+      # --- LINUX ---
+      # Archives the entire `bundle/` directory (not just the `bluepad32` ELF
+      # binary) because Flutter Linux executables dynamically link against
+      # `lib/libflutter_linux_gtk.so` and `lib/libapp.so` via `$ORIGIN/lib` and
+      # load `data/icudtl.dat` and `data/flutter_assets/` at runtime.
+      - name: Build & Package (Linux)
+        if: startsWith(matrix.target, 'linux-')
+        run: |
+          flutter build linux --release \
+            --build-name="${{ steps.version.outputs.build_name }}" \
+            --build-number="${{ steps.version.outputs.build_number }}"
+          cp -R "build/linux/${{ matrix.linux_arch }}/release/bundle" "${{ matrix.asset_name }}"
+          tar -czf "${{ matrix.asset_name }}.tar.gz" "${{ matrix.asset_name }}"
+
+      # --- WINDOWS ---
+      # Archives the entire `Release/` directory because `bluepad32.exe`
+      # dynamically links against `flutter_windows.dll`,
+      # `flutter_blue_plus_winrt_plugin.dll`, and `data/app.so` alongside
+      # `data/icudtl.dat` and `data/flutter_assets/`.
+      - name: Build & Package (Windows)
+        if: matrix.target == 'windows-amd64'
+        shell: bash
+        run: |
+          flutter build windows --release \
+            --build-name="${{ steps.version.outputs.build_name }}" \
+            --build-number="${{ steps.version.outputs.build_number }}"
+          cp -R build/windows/x64/runner/Release "${{ matrix.asset_name }}"
+          7z a "${{ matrix.asset_name }}.zip" "${{ matrix.asset_name }}"
+
+      # --- WEB ---
+      - name: Build & Package (Web)
+        if: matrix.target == 'web'
+        run: |
+          flutter build web --release \
+            --build-name="${{ steps.version.outputs.build_name }}" \
+            --build-number="${{ steps.version.outputs.build_number }}"
+          cp -R build/web "${{ matrix.asset_name }}"
+          tar -czf "${{ matrix.asset_name }}.tar.gz" "${{ matrix.asset_name }}"
+
+      # --- UPLOAD TO GITHUB RELEASE ---
+      # Note: `defaults.run.working-directory: src` applies only to `run:` steps;
+      # `softprops/action-gh-release@v2` resolves `files:` globs relative to
+      # `$GITHUB_WORKSPACE`, so paths must be prefixed with `src/`.
+      - name: Upload Release Assets
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: |
+            src/${{ matrix.asset_name }}.tar.gz
+            src/${{ matrix.asset_name }}.zip
+            src/${{ matrix.asset_name }}.apk
+            src/${{ matrix.asset_name }}.aab
+            src/${{ matrix.asset_name }}.ipa
