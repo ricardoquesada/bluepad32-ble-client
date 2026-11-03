@@ -1,18 +1,36 @@
 # Bluepad32 BLE Client
 
-A cross-platform Flutter companion app for configuring and monitoring [Bluepad32](https://github.com/ricardoquesada/bluepad32) devices over Bluetooth Low Energy (BLE).
+A cross-platform Flutter companion app that configures and monitors
+[Bluepad32](https://github.com/ricardoquesada/bluepad32) devices over Bluetooth
+Low Energy (BLE).
 
-It connects to the Bluepad32 BLE GATT service (`4627C4A4-AC00-46B9-B688-AFC5C1BF7F63`) to inspect connected gamepads and update runtime settings without reflashing firmware or opening a serial console.
+It connects to the Bluepad32 BLE GATT service
+(`4627C4A4-AC00-46B9-B688-AFC5C1BF7F63`). Use it to inspect connected gamepads
+and update runtime settings without a serial console or firmware reflash.
 
 ## Features
 
-* **Device Discovery & Custom Service Identity (`AC0D`):** Scans for nearby Bluepad32 peripherals advertising the Bluepad32 BLE service, prioritizing live `ADV_IND` + `SCAN_RSP` advertising names over stale OS-cached device names and supporting inline service renaming (`1–29` UTF-8 bytes) from the dashboard.
-* **Session Password Authentication (`AC0E`):** Supports password-protected Bluepad32 peripherals (`1–31` UTF-8 bytes), prompting to unlock the BLE session before reading or modifying protected controller telemetry and settings.
-* **Live Controller Monitor (`AC05`):** Displays connected controllers in real time (controller model, MAC address, Vendor/Product ID, connection state) and allows disconnecting individual slots (`AC0A`).
-* **Radio & Pairing Controls (`AC03`, `AC04`, `AC09`):** Toggle controller scanning/pairing, BLE controller connections, and virtual child devices (such as DualShock 4 / DualSense touchpad mice).
-* **Controller Button Mappings & Custom Remapping Matrix (`AC06`, `AC0F`):** Switch between **Xbox**, **Nintendo Switch**, and **Custom** presets (`AC06`, accepting 1-byte preset selection or 29-byte atomic custom-mapping writes), or open the interactive **Custom Remapping Matrix** editor to inspect and customize all 28 fields of `uni_gamepad_mappings_t` (`AC0F`: 4 D-pad directions, 10 face/shoulder/trigger/thumb buttons, 4 misc buttons, 4 analog stick axes, 4 axis-inversion switches, and 2 analog pedals/triggers).
-* **Bluetooth MAC Allowlist (`AC07`, `AC08`):** Enable or disable allowlist enforcement and manage up to 4 allowed controller MAC addresses (including a one-tap shortcut to add currently connected controllers).
-* **System Maintenance (`AC0B`, `AC0C`):** Clear stored Bluetooth pairing keys or reboot the Bluepad32 microcontroller remotely.
+* **Device Discovery & Custom Service Identity (`AC0D`):** Scans for nearby
+    Bluepad32 BLE peripherals. It prioritizes live `ADV_IND` + `SCAN_RSP`
+    advertising names over cached OS names and supports inline renaming (`1–29`
+    UTF-8 bytes).
+* **Session Password Authentication (`AC0E`):** Supports password-protected
+    Bluepad32 peripherals (`1–31` UTF-8 bytes). The client prompts you to unlock
+    the BLE session before it reads or updates protected settings.
+* **Live Controller Monitor (`AC05`, `AC0A`):** Shows connected controllers in
+    real time (model, MAC address, Vendor/Product ID, and state). You can
+    disconnect individual slots remotely (`AC0A`).
+* **Radio & Pairing Controls (`AC03`, `AC04`, `AC09`):** Toggles controller
+    scanning, BLE controller connections, and virtual child devices (such as
+    DualShock 4 and DualSense touchpad mice).
+* **Controller Button Mappings & Custom Remapping Matrix (`AC06`, `AC0F`):**
+    Selects **Xbox**, **Nintendo Switch**, or **Custom** presets (`AC06`). The
+    interactive **Custom Remapping Matrix** editor (`AC0F`) configures all 28
+    fields of `uni_gamepad_mappings_t`.
+* **Bluetooth MAC Allowlist (`AC07`, `AC08`):** Enables or disables allowlist
+    enforcement. You can add or remove up to 4 allowed controller MAC addresses.
+* **System Maintenance (`AC0B`, `AC0C`):** Clears stored Bluetooth pairing keys
+    or reboots the Bluepad32 microcontroller remotely.
 
 ## Supported Platforms
 
@@ -23,11 +41,102 @@ Built with Flutter and [`flutter_blue_plus`](https://pub.dev/packages/flutter_bl
 * **macOS** (macOS 10.14+, Universal `x86_64` + `arm64`)
 * **Linux** (`x64` and `arm64`, requires `bluez`)
 * **Windows** (Windows 10+ `x64` via WinRT BLE)
-* **Web** (experimental, requires a browser with Web Bluetooth support such as Chrome or Edge)
+* **Web** (experimental, requires Chrome or Edge with Web Bluetooth support)
+
+## Screenshots
+
+| Device Discovery (`ScanScreen`) | Password Authentication (`AC0E`) |
+| :---: | :---: |
+| ![Scan Screen](docs/images/ble_client_scan.png) | ![Password Authentication](docs/images/ble_client_password_auth.png) |
+
+| Connected Controllers & Radio Settings (`AC01`–`AC05`, `AC07`) | Allowlist, Mappings & Maintenance (`AC06`–`AC09`, `AC0B`, `AC0C`) |
+| :---: | :---: |
+| ![Dashboard Controllers](docs/images/ble_client_dashboard_controllers.png) | ![Allowlist and Mappings](docs/images/ble_client_allowlist_and_mappings.png) |
+
+| Interactive 28-Field Custom Remapping Matrix (`AC0F`) |
+| :---: |
+| <img src="docs/images/ble_client_custom_remapping_matrix.png" width="460" alt="Custom Remapping Matrix"/> |
+
+## How to Use
+
+### 1. Enable the BLE Service on Your Bluepad32 Device
+
+Before you connect with the client app, enable the BLE configuration service
+(`uni_bt_service.c`) on your Bluepad32 board:
+
+* **ESP32 Serial Console (`idf.py monitor`):**
+
+    ```sh
+    # Enable and advertise the BLE configuration service
+    ble_service_enable 1
+
+    # (Optional) Set the advertised BLE device name (1..29 UTF-8 bytes)
+    ble_service_name "Unijoysticle 2 C64"
+
+    # (Optional) Set a session password (1..31 UTF-8 bytes, or 'none' to clear)
+    ble_service_password "arcade-secret"
+    ```
+
+* **Bluepad32 C API:**
+
+    ```c
+    #include "bt/uni_bt.h"
+    #include "bt/uni_bt_service.h"
+
+    // Inside on_init_complete() on the BTstack thread:
+    uni_bt_service_set_name("Unijoysticle 2 C64");
+    uni_bt_service_set_password("arcade-secret"); // or NULL / "" for open access
+    uni_bt_service_set_enabled(true);
+
+    // Or from any external thread / FreeRTOS task:
+    uni_bt_enable_service_safe(true);
+    ```
+
+### 2. Discover and Connect to a Bluepad32 Device
+
+1.  Open **Bluepad32 BLE Client**. You can download a prebuilt binary from
+    [GitHub Releases](https://github.com/ricardoquesada/bluepad32-ble-client/releases)
+    or build from source.
+2.  Select the **Bluepad32 Only** filter chip. Tap **SCAN**.
+3.  Tap a device row to inspect its RSSI, TX power level, and service UUID
+    (`4627C4A4-AC00-46B9-B688-AFC5C1BF7F63`).
+4.  Tap **Connect** to open the configuration dashboard.
+
+### 3. Unlock a Password-Protected Session (If Enabled)
+
+If the Bluepad32 peripheral requires a session password (`AC0E`), the dashboard
+shows a **Locked** badge. Enter the password (`1–31` UTF-8 bytes) and tap
+**Unlock** to authenticate the session.
+
+### 4. Monitor Controllers and Update Runtime Settings
+
+* **System Info (`AC01`, `AC02`, `AC0D`, `AC0E`):** Shows the firmware version
+    and active controller slot count (`2 / 4`). Tap the edit icon to rename the
+    BLE service (`1–29` UTF-8 bytes), or tap the refresh icon to re-read all
+    GATT characteristics.
+* **Connected Controllers (`AC05`, `AC0A`):** Shows connected gamepads in real
+    time (slot index, model name, Bluetooth MAC address, `VID:PID`, state, and
+    direction). Tap **Disconnect** on any slot to disconnect that controller.
+* **Connections & Security (`AC03`, `AC04`, `AC07`):** Toggles **BLE Connections
+    Enabled**, **Scan / Pair New Controllers**, and **Enforce Allowlist**.
+* **Bluetooth Allowlist (`AC08`):** Tap **+ Add MAC Address** to add an allowed
+    controller MAC address (`AA:BB:CC:DD:EE:FF`). Tap the trash icon to remove
+    an existing entry.
+* **Virtual Devices & Mappings (`AC06`, `AC09`, `AC0F`):**
+    * Toggle **Virtual Devices Enabled** (such as the DualSense or DualShock 4
+        touchpad mouse).
+    * Select the **Xbox**, **Nintendo Switch**, or **Custom** layout preset.
+    * Tap **Configure** next to **Customize Remapping Matrix** to open the
+        28-field remapping editor (`AC0F`). You can load quick presets (**Xbox
+        Default**, **Switch A/B & X/Y**, **Swap Sticks**) or remap individual
+        buttons, axes, inversions, D-pad directions, and triggers.
+* **Danger Zone (`AC0B`, `AC0C`):** Tap **`Delete Stored Bond Keys`** to clear
+    all saved Bluetooth keys. Tap **`Reset / Reboot Device`** to restart the
+    microcontroller.
 
 ## Building and Deploying
 
-All Flutter project files are located in the `src/` directory:
+The `src/` directory contains all Flutter project files:
 
 ```bash
 cd src
@@ -72,7 +181,8 @@ flutter run -d chrome
     flutter install -d <ios_device_id>
     ```
 
-    *(Requires Xcode and a valid Apple Developer signing team configured in `src/ios/Runner.xcworkspace`.)*
+    *(Requires Xcode and an Apple Developer signing team in
+    `src/ios/Runner.xcworkspace`.)*
 
 * **macOS:**
 
@@ -103,26 +213,35 @@ flutter run -d chrome
 
 ## Creating a Release
 
-Releases are built and published automatically by [`.github/workflows/release.yml`](.github/workflows/release.yml) whenever a `v*` tag is pushed to GitHub:
+The [`.github/workflows/release.yml`](.github/workflows/release.yml) workflow
+builds and publishes releases automatically when you push a `v*` tag to GitHub:
 
 ```bash
 git tag v1.2.0
 git push origin v1.2.0
 ```
 
-The workflow extracts the semantic version from the tag (`v1.2.0` -> `--build-name=1.2.0`) and derives a monotonically increasing integer build number (`--build-number=${{ github.run_number }}`, or `N` if tagged with an explicit `+N` suffix such as `v1.2.0+42`).
+The workflow extracts the semantic version from the tag (`v1.2.0` ->
+`--build-name=1.2.0`). It sets an integer build number
+(`--build-number=${{ github.run_number }}`, or `N` if the tag ends with `+N`
+such as `v1.2.0+42`).
 
 ### Manual Dry-Run (`workflow_dispatch`)
 
-To test the multi-platform release build pipeline without creating a GitHub tag or publishing a GitHub Release, trigger the workflow manually:
+To test the release build pipeline without creating a GitHub tag or GitHub
+Release, trigger the workflow manually:
 
-* **GitHub Web UI:** Go to **Actions -> Release -> Run workflow**, select the `main` branch, and click **Run workflow**.
+* **GitHub Web UI:** Open **Actions -> Release -> Run workflow**, select the
+    `main` branch, and click **Run workflow**.
 * **GitHub CLI (`gh`):**
-  ```bash
-  gh workflow run release.yml --ref main
-  ```
 
-Manual `workflow_dispatch` runs build all platform targets with fallback version `1.0.0+${{ github.run_number }}` and attach the packaged binaries as downloadable workflow run artifacts on the GitHub Actions run summary page instead of creating a GitHub Release.
+    ```bash
+    gh workflow run release.yml --ref main
+    ```
+
+Manual `workflow_dispatch` runs build all platform targets with fallback version
+`1.0.0+${{ github.run_number }}`. The workflow attaches the packaged binaries as
+run artifacts on the GitHub Actions summary page.
 
 ### Published Release Assets
 
@@ -140,27 +259,31 @@ Manual `workflow_dispatch` runs build all platform targets with fallback version
 ### GitHub Actions Secrets for Code Signing & Notarization
 
 * **macOS Code Signing & Apple Notary Service (Required for macOS release job):**
-  * `MACOS_CERTIFICATE`: Base64-encoded `Developer ID Application` `.p12` certificate.
-  * `MACOS_CERTIFICATE_PWD`: Password for the macOS `.p12` certificate.
-  * `KEYCHAIN_PWD`: Temporary CI keychain password.
-  * `APPLE_ID`: Apple ID email address for `xcrun notarytool`.
-  * `APPLE_PASSWORD`: App-specific password for `xcrun notarytool`.
-  * `APPLE_TEAM_ID`: 10-character Apple Developer Team ID.
-* **Android Release Keystore Signing (Optional; falls back to debug signing if omitted):**
-  * `ANDROID_KEYSTORE_BASE64`: Base64-encoded Android upload keystore (`.jks` or `.keystore`).
-  * `ANDROID_STORE_PASSWORD`: Keystore password.
-  * `ANDROID_KEY_ALIAS`: Key alias inside the keystore.
-  * `ANDROID_KEY_PASSWORD`: Private key password.
-* **iOS App Store Distribution Signing (Optional; falls back to unsigned `.ipa` if omitted):**
-  * `IOS_CERTIFICATE`: Base64-encoded `Apple Distribution` `.p12` certificate.
-  * `IOS_CERTIFICATE_PWD`: Password for `IOS_CERTIFICATE`.
-  * `IOS_PROVISION_PROFILE`: Base64-encoded App Store `.mobileprovision` profile for `moe.retro.bluepad32`.
-  * `KEYCHAIN_PWD`: Temporary CI keychain password (shared with macOS).
-  * `APPLE_TEAM_ID`: 10-character Apple Developer Team ID (shared with macOS).
+    * `MACOS_CERTIFICATE`: Base64-encoded `Developer ID Application` `.p12`
+        certificate.
+    * `MACOS_CERTIFICATE_PWD`: Password for the macOS `.p12` certificate.
+    * `KEYCHAIN_PWD`: Temporary CI keychain password.
+    * `APPLE_ID`: Apple ID email address for `xcrun notarytool`.
+    * `APPLE_PASSWORD`: App-specific password for `xcrun notarytool`.
+    * `APPLE_TEAM_ID`: 10-character Apple Developer Team ID.
+* **Android Release Keystore Signing (Optional, falls back to debug signing if omitted):**
+    * `ANDROID_KEYSTORE_BASE64`: Base64-encoded Android upload keystore (`.jks`
+        or `.keystore`).
+    * `ANDROID_STORE_PASSWORD`: Keystore password.
+    * `ANDROID_KEY_ALIAS`: Key alias inside the keystore.
+    * `ANDROID_KEY_PASSWORD`: Private key password.
+* **iOS App Store Distribution Signing (Optional, falls back to unsigned `.ipa` if omitted):**
+    * `IOS_CERTIFICATE`: Base64-encoded `Apple Distribution` `.p12` certificate.
+    * `IOS_CERTIFICATE_PWD`: Password for `IOS_CERTIFICATE`.
+    * `IOS_PROVISION_PROFILE`: Base64-encoded App Store `.mobileprovision`
+        profile for `moe.retro.bluepad32`.
+    * `KEYCHAIN_PWD`: Temporary CI keychain password (shared with macOS).
+    * `APPLE_TEAM_ID`: 10-character Apple Developer Team ID (shared with macOS).
 
 ### Running Tests & Static Analysis
 
-Run static analysis and the automated unit and widget test suite from the `src/` directory:
+Run static analysis and the automated unit and widget test suite from the `src/`
+directory:
 
 ```bash
 cd src
