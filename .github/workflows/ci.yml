@@ -1,0 +1,52 @@
+# ==============================================================================
+# Continuous Integration Workflow (bluepad32-ble-client)
+# ==============================================================================
+# Runs on every push to `main` and every pull request targeting `main`.
+# Enforces Dart formatting (`dart format`), static analysis (`flutter analyze`),
+# and the unit/widget test suite (`flutter test --coverage`) inside `src/`.
+# ==============================================================================
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Format, Analyze & Test
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: src
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: "stable"
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Verify Dart formatting
+        run: dart format --output=none --set-exit-if-changed lib test
+
+      - name: Run static analysis
+        run: flutter analyze --fatal-infos --fatal-warnings
+
+      - name: Run unit and widget tests
+        run: flutter test --coverage
