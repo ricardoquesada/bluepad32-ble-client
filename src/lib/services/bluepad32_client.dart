@@ -84,32 +84,41 @@ class _DeviceBluepad32GattTransport implements Bluepad32GattTransport {
     // 1. Connect and await automatic Android MTU=512 negotiation before service discovery.
     await _device.connectAndUpdateStream();
 
-    // 2. Discover GATT services and locate the primary Bluepad32 service.
-    final List<BluetoothService> services = await _device.discoverServices();
-    BluetoothService? bluepadService;
-    for (final BluetoothService service in services) {
-      if (service.uuid == Bluepad32Uuids.service) {
-        bluepadService = service;
-        break;
+    try {
+      // 2. Discover GATT services and locate the primary Bluepad32 service.
+      final List<BluetoothService> services = await _device.discoverServices();
+      BluetoothService? bluepadService;
+      for (final BluetoothService service in services) {
+        if (service.uuid == Bluepad32Uuids.service) {
+          bluepadService = service;
+          break;
+        }
       }
-    }
-    if (bluepadService == null) {
-      throw StateError(
-        'Bluepad32 GATT service (${Bluepad32Uuids.service}) not found on device.',
-      );
-    }
+      if (bluepadService == null) {
+        throw StateError(
+          'Bluepad32 GATT service (${Bluepad32Uuids.service}) not found on device.',
+        );
+      }
 
-    // 3. Index characteristics AC01..AC0F by UUID.
-    _characteristics.clear();
-    for (final BluetoothCharacteristic characteristic
-        in bluepadService.characteristics) {
-      _characteristics[characteristic.uuid] = characteristic;
-    }
+      // 3. Index characteristics AC01..AC0F by UUID.
+      _characteristics.clear();
+      for (final BluetoothCharacteristic characteristic
+          in bluepadService.characteristics) {
+        _characteristics[characteristic.uuid] = characteristic;
+      }
 
-    // 4. Cancel any stale AC05 subscription; enableNotifications() will subscribe
-    // once AC0E auth status is confirmed open or authenticated.
-    await _ac05Subscription?.cancel();
-    _ac05Subscription = null;
+      // 4. Cancel any stale AC05 subscription; enableNotifications() will subscribe
+      // once AC0E auth status is confirmed open or authenticated.
+      await _ac05Subscription?.cancel();
+      _ac05Subscription = null;
+    } catch (_) {
+      // Tear down the OS-level BLE link if service discovery fails or times out
+      // so the peripheral can immediately resume advertising.
+      try {
+        await disconnect();
+      } catch (_) {}
+      rethrow;
+    }
   }
 
   @override
