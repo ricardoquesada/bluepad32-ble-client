@@ -240,6 +240,7 @@ class FakeBluepad32GattTransport implements Bluepad32GattTransport {
     bool allowlistEnabled = false,
     List<MacAddress> allowlistAddresses = const <MacAddress>[],
     bool virtualDevicesEnabled = true,
+    int allowedHidDeviceTypes = Bluepad32HidDeviceTypes.all,
   }) : _password = (password != null && password.isNotEmpty) ? password : null {
     _authStatus = _password != null
         ? Bluepad32AuthStatus.required
@@ -302,6 +303,10 @@ class FakeBluepad32GattTransport implements Bluepad32GattTransport {
     setCharacteristicValue(
       Bluepad32Uuids.virtualDeviceEnabled,
       <int>[virtualDevicesEnabled ? 1 : 0],
+    );
+    setCharacteristicValue(
+      Bluepad32Uuids.hidAllowTypes,
+      <int>[allowedHidDeviceTypes & Bluepad32HidDeviceTypes.all],
     );
   }
 
@@ -567,6 +572,27 @@ class FakeBluepad32GattTransport implements Bluepad32GattTransport {
         0x0d,
         'ATT_ERROR_INVALID_ATTRIBUTE_VALUE_LENGTH (0x0d)',
       );
+    }
+
+    if (uuid == Bluepad32Uuids.hidAllowTypes) {
+      if (payload.length != 1) {
+        throw FlutterBluePlusException(
+          ErrorPlatform.fbp,
+          'writeCharacteristic',
+          0x0d,
+          'ATT_ERROR_INVALID_ATTRIBUTE_VALUE_LENGTH (0x0d)',
+        );
+      }
+      if (!Bluepad32HidDeviceTypes.isValidMask(payload[0])) {
+        throw FlutterBluePlusException(
+          ErrorPlatform.fbp,
+          'writeCharacteristic',
+          0x13,
+          'ATT_ERROR_VALUE_NOT_ALLOWED (0x13)',
+        );
+      }
+      _characteristicValues[Bluepad32Uuids.hidAllowTypes] = payload;
+      return;
     }
 
     _characteristicValues[uuid] = payload;
@@ -857,6 +883,13 @@ class Bluepad32Client extends ChangeNotifier {
       final bool virtualDevicesEnabled =
           virtualBytes.isNotEmpty && virtualBytes[0] != 0;
 
+      // AC10: Allowed HID Device Types (uint8_t bitmask: 0x00..0x07, defaults to 0x07 on legacy firmware)
+      final List<int> hidAllowBytes =
+          await _readOptionalCharacteristic(Bluepad32Uuids.hidAllowTypes);
+      final int allowedHidDeviceTypes = hidAllowBytes.isNotEmpty
+          ? (hidAllowBytes[0] & Bluepad32HidDeviceTypes.all)
+          : Bluepad32HidDeviceTypes.all;
+
       _updateState(
         _state.copyWith(
           isRefreshing: false,
@@ -874,6 +907,7 @@ class Bluepad32Client extends ChangeNotifier {
           allowlistEnabled: allowlistEnabled,
           allowlistAddresses: allowlistAddresses,
           virtualDevicesEnabled: virtualDevicesEnabled,
+          allowedHidDeviceTypes: allowedHidDeviceTypes,
         ),
       );
     } catch (e) {
@@ -1315,6 +1349,51 @@ class Bluepad32Client extends ChangeNotifier {
         ),
       );
     }
+  }
+
+  /// Sets the allowed HID device types bitmask (`AC10`, `0x00`..`0x07`).
+  Future<void> setAllowedHidDeviceTypes(int types) async {
+    if (!Bluepad32HidDeviceTypes.isValidMask(types)) {
+      _updateState(
+        _state.copyWith(
+          errorMessage:
+              'Invalid HID device types mask: 0x${types.toRadixString(16)} (must be 0x00..0x07).',
+        ),
+      );
+      return;
+    }
+
+    try {
+      await _transport.writeCharacteristic(
+        Bluepad32Uuids.hidAllowTypes,
+        <int>[types & 0xFF],
+      );
+      _updateState(
+        _state.copyWith(
+          allowedHidDeviceTypes: types & Bluepad32HidDeviceTypes.all,
+          clearError: true,
+        ),
+      );
+    } catch (e) {
+      _updateState(
+        _state.copyWith(
+          authStatus: _isAuthenticationError(e)
+              ? Bluepad32AuthStatus.required
+              : _state.authStatus,
+          errorMessage:
+              'Failed to update allowed HID device types: ${_formatError(e)}',
+        ),
+      );
+    }
+  }
+
+  /// Toggles an individual `Bluepad32HidDeviceTypes` bit (`gamepad`, `mouse`,
+  /// or `keyboard`) in [Bluepad32State.allowedHidDeviceTypes] (`AC10`).
+  Future<void> toggleAllowedHidDeviceType(int typeBit, bool enabled) async {
+    final int current =
+        _state.allowedHidDeviceTypes & Bluepad32HidDeviceTypes.all;
+    final int next = enabled ? (current | typeBit) : (current & ~typeBit);
+    await setAllowedHidDeviceTypes(next & Bluepad32HidDeviceTypes.all);
   }
 
   /// Disconnects the controller at slot [idx] (`AC0A`).

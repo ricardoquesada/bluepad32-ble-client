@@ -213,12 +213,13 @@ void main() {
     );
 
     testWidgets(
-      '3. Connections & Security Card toggles BLE (AC03), Scanning (AC04), and Enforce Allowlist (AC07)',
+      '3. Connections & Security Card toggles BLE (AC03), Scanning (AC04), Enforce Allowlist (AC07), and Allowed HID Device Types (AC10)',
       (WidgetTester tester) async {
         final FakeBluepad32GattTransport transport = FakeBluepad32GattTransport(
           bleEnabled: true,
           scanningEnabled: false,
           allowlistEnabled: false,
+          allowedHidDeviceTypes: Bluepad32HidDeviceTypes.all,
         );
         final Bluepad32Client client = Bluepad32Client.test(
           transport: transport,
@@ -227,6 +228,7 @@ void main() {
             bleEnabled: true,
             scanningEnabled: false,
             allowlistEnabled: false,
+            allowedHidDeviceTypes: Bluepad32HidDeviceTypes.all,
           ),
         );
         addTearDown(client.dispose);
@@ -264,6 +266,34 @@ void main() {
           equals(Uint8List.fromList(<int>[1])),
         );
         expect(client.state.allowlistEnabled, isTrue);
+
+        // Toggle Keyboards chip off (0x07 -> 0x03) and Mice chip off (0x03 -> 0x01)
+        final Finder keyboardChip = find.byKey(
+          const Key('chip_hid_allow_keyboard'),
+        );
+        await tester.ensureVisible(keyboardChip);
+        await tester.tap(keyboardChip);
+        await tester.pumpAndSettle();
+        expect(
+          transport.lastWriteFor(Bluepad32Uuids.hidAllowTypes),
+          equals(Uint8List.fromList(<int>[0x03])),
+        );
+        expect(client.state.allowedHidDeviceTypes, equals(0x03));
+
+        final Finder mouseChip = find.byKey(
+          const Key('chip_hid_allow_mouse'),
+        );
+        await tester.ensureVisible(mouseChip);
+        await tester.tap(mouseChip);
+        await tester.pumpAndSettle();
+        expect(
+          transport.lastWriteFor(Bluepad32Uuids.hidAllowTypes),
+          equals(Uint8List.fromList(<int>[Bluepad32HidDeviceTypes.gamepad])),
+        );
+        expect(
+          client.state.allowedHidDeviceTypes,
+          equals(Bluepad32HidDeviceTypes.gamepad),
+        );
       },
     );
 

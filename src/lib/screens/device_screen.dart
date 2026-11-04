@@ -266,10 +266,13 @@ class _DeviceScreenState extends State<DeviceScreen> {
                         bleEnabled: state.bleEnabled,
                         scanningEnabled: state.scanningEnabled,
                         allowlistEnabled: state.allowlistEnabled,
+                        allowedHidDeviceTypes: state.allowedHidDeviceTypes,
                         enabled: interactive,
                         onBleEnabledChanged: _client.setBleEnabled,
                         onScanningChanged: _client.setControllerScanning,
                         onAllowlistEnabledChanged: _client.setAllowlistEnabled,
+                        onAllowedHidDeviceTypesChanged:
+                            _client.setAllowedHidDeviceTypes,
                       ),
                       const SizedBox(height: 12),
                       AllowlistCard(

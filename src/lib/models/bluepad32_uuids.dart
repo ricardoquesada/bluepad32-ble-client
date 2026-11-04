@@ -1,5 +1,5 @@
 /// GATT UUID registry for the Bluepad32 BLE configuration and telemetry service
-/// (`4627c4a4-ac00-46b9-b688-afc5c1bf7f63`, characteristics `AC01`–`AC0F`).
+/// (`4627c4a4-ac00-46b9-b688-afc5c1bf7f63`, characteristics `AC01`–`AC10`).
 library;
 
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
@@ -8,7 +8,7 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 /// (`src/components/bluepad32/bt/uni_bt_service.gatt`).
 ///
 /// The primary service uses base UUID `4627c4a4-ac00-46b9-b688-afc5c1bf7f63`
-/// with 15 characteristics numbered contiguously from `AC01` through `AC0F`:
+/// with 16 characteristics numbered contiguously from `AC01` through `AC10`:
 /// - `AC05` ([connectedDevices]) unifies both on-demand full-table reads and
 ///   reactive change notifications over a single GATT handle.
 /// - `AC06` ([mappings]) selects the active controller mapping preset (`0=Xbox`,
@@ -18,15 +18,19 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 ///   shortened/complete name in `ADV_IND`).
 /// - `AC0E` ([serviceAuth]) enforces per-connection session authentication
 ///   (`0 = open`, `1 = password required`, `2 = authenticated`), gating reads
-///   to `AC02`–`AC09` and `AC0F`, writes to `AC03`–`AC0D` and `AC0F`, and `AC05`
-///   CCCD subscriptions.
+///   to `AC02`–`AC09`, `AC0F`, and `AC10`, writes to `AC03`–`AC0D`, `AC0F`,
+///   and `AC10`, and `AC05` CCCD subscriptions.
 /// - `AC0F` ([customMappings]) exposes the 28-byte packed `uni_gamepad_mappings_t`
 ///   custom controller remapping matrix (`READ | WRITE | DYNAMIC`).
+/// - `AC10` ([hidAllowTypes]) exposes the 1-byte `uni_hid_device_type_t` bitmask
+///   (`0x00`..`0x07`) controlling which HID device classes (gamepads, mice,
+///   keyboards) are accepted during discovery (`READ | WRITE | DYNAMIC`).
 ///
 /// ```dart
 /// final Guid presetUuid = Bluepad32Uuids.mappings;       // AC06
 /// final Guid matrixUuid = Bluepad32Uuids.customMappings; // AC0F
-/// assert(Bluepad32Uuids.allCharacteristics.length == 15);
+/// final Guid allowTypesUuid = Bluepad32Uuids.hidAllowTypes; // AC10
+/// assert(Bluepad32Uuids.allCharacteristics.length == 16);
 /// ```
 abstract final class Bluepad32Uuids {
   /// Primary Bluepad32 GATT Service UUID (`4627C4A4-AC00-46B9-B688-AFC5C1BF7F63`).
@@ -87,6 +91,14 @@ abstract final class Bluepad32Uuids {
   /// custom controller remapping table.
   static final Guid customMappings = Guid(customMappingsUuid);
 
+  /// Canonical lowercase UUID string for `AC10` ([hidAllowTypes]).
+  static const String hidAllowTypesUuid =
+      '4627c4a4-ac10-46b9-b688-afc5c1bf7f63';
+
+  /// `AC10` (`READ | WRITE | DYNAMIC`): Allowed HID device types bitmask
+  /// (`uint8_t`: `0x01=Gamepad`, `0x02=Mouse`, `0x04=Keyboard`, `0x07=All`).
+  static final Guid hidAllowTypes = Guid(hidAllowTypesUuid);
+
   /// Short-handle alias for `AC01` ([version]).
   static final Guid ac01 = version;
 
@@ -132,7 +144,10 @@ abstract final class Bluepad32Uuids {
   /// Short-handle alias for `AC0F` ([customMappings]).
   static final Guid ac0f = customMappings;
 
-  /// Human-readable short names keyed by 4-character hex handle (`ac01`–`ac0f`).
+  /// Short-handle alias for `AC10` ([hidAllowTypes]).
+  static final Guid ac10 = hidAllowTypes;
+
+  /// Human-readable short names keyed by 4-character hex handle (`ac01`–`ac10`).
   static const Map<String, String> shortNames = <String, String>{
     'ac01': 'Firmware Version (AC01)',
     'ac02': 'Max Connections (AC02)',
@@ -149,9 +164,10 @@ abstract final class Bluepad32Uuids {
     'ac0d': 'Service Name (AC0D)',
     'ac0e': 'Service Auth (AC0E)',
     'ac0f': 'Custom Mappings (AC0F)',
+    'ac10': 'Allowed HID Device Types (AC10)',
   };
 
-  /// All 15 characteristic UUIDs (`AC01` through `AC0F`) in the Bluepad32 GATT service.
+  /// All 16 characteristic UUIDs (`AC01` through `AC10`) in the Bluepad32 GATT service.
   static final List<Guid> allCharacteristics = List.unmodifiable(<Guid>[
     version,
     maxConnections,
@@ -168,5 +184,6 @@ abstract final class Bluepad32Uuids {
     serviceName,
     serviceAuth,
     customMappings,
+    hidAllowTypes,
   ]);
 }

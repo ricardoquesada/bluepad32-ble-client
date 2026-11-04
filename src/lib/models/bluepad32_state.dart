@@ -1,4 +1,4 @@
-// Immutable state snapshot aggregating all Bluepad32 GATT characteristics (`AC01`–`AC0E`)
+// Immutable state snapshot aggregating all Bluepad32 GATT characteristics (`AC01`–`AC10`)
 // and BLE connection status for presentation in the Material 3 dashboard.
 
 import 'package:flutter/foundation.dart';
@@ -8,6 +8,29 @@ import 'gamepad_mappings.dart';
 
 export 'connected_controller.dart';
 export 'gamepad_mappings.dart';
+
+/// Bitmask constants for characteristic `AC10` (`hidAllowTypes`).
+///
+/// Mirrors `uni_hid_device_type_t` in `src/components/bluepad32/include/uni_hid_device.h`.
+abstract final class Bluepad32HidDeviceTypes {
+  /// `0x00`: Reject all HID device categories (`UNI_HID_DEVICE_TYPE_NONE`).
+  static const int none = 0x00;
+
+  /// `0x01` (`BIT(0)`): Accept gamepads, joysticks, and Wii Balance Boards (`UNI_HID_DEVICE_TYPE_GAMEPAD`).
+  static const int gamepad = 0x01;
+
+  /// `0x02` (`BIT(1)`): Accept mice (`UNI_HID_DEVICE_TYPE_MOUSE`).
+  static const int mouse = 0x02;
+
+  /// `0x04` (`BIT(2)`): Accept keyboards (`UNI_HID_DEVICE_TYPE_KEYBOARD`).
+  static const int keyboard = 0x04;
+
+  /// `0x07`: Accept all supported HID device categories (`UNI_HID_DEVICE_TYPE_ALL`).
+  static const int all = gamepad | mouse | keyboard;
+
+  /// Returns `true` if [value] contains only valid `UNI_HID_DEVICE_TYPE_*` bits (`0x00`..`0x07`).
+  static bool isValidMask(int value) => (value & ~all) == 0 && value >= 0;
+}
 
 /// Session authentication status reported by characteristic `AC0E` (`serviceAuth`).
 ///
@@ -96,6 +119,9 @@ class Bluepad32State {
   /// Whether virtual child devices (such as DualShock/DualSense touchpad mouse) are enabled (`AC09`).
   final bool virtualDevicesEnabled;
 
+  /// Allowed HID device types bitmask (`AC10`, `0x00`..`0x07`, default `0x07`).
+  final int allowedHidDeviceTypes;
+
   const Bluepad32State({
     this.isConnecting = false,
     this.isConnected = false,
@@ -112,11 +138,24 @@ class Bluepad32State {
     this.allowlistEnabled = false,
     this.allowlistAddresses = const <MacAddress>[],
     this.virtualDevicesEnabled = false,
+    this.allowedHidDeviceTypes = Bluepad32HidDeviceTypes.all,
   });
 
   /// Subset of [controllers] that are currently occupied/connected.
   List<ConnectedController> get activeControllers =>
       controllers.where((ConnectedController c) => c.isConnected).toList(growable: false);
+
+  /// Whether gamepad HID devices (`BIT(0)`) are accepted during discovery (`AC10`).
+  bool get isGamepadAllowed =>
+      (allowedHidDeviceTypes & Bluepad32HidDeviceTypes.gamepad) != 0;
+
+  /// Whether mouse HID devices (`BIT(1)`) are accepted during discovery (`AC10`).
+  bool get isMouseAllowed =>
+      (allowedHidDeviceTypes & Bluepad32HidDeviceTypes.mouse) != 0;
+
+  /// Whether keyboard HID devices (`BIT(2)`) are accepted during discovery (`AC10`).
+  bool get isKeyboardAllowed =>
+      (allowedHidDeviceTypes & Bluepad32HidDeviceTypes.keyboard) != 0;
 
   /// Whether the connected peripheral has a non-empty service password configured
   /// ([Bluepad32AuthStatus.required] or [Bluepad32AuthStatus.authenticated]).
@@ -154,6 +193,7 @@ class Bluepad32State {
     bool? allowlistEnabled,
     List<MacAddress>? allowlistAddresses,
     bool? virtualDevicesEnabled,
+    int? allowedHidDeviceTypes,
   }) {
     return Bluepad32State(
       isConnecting: isConnecting ?? this.isConnecting,
@@ -176,6 +216,8 @@ class Bluepad32State {
           ? List<MacAddress>.unmodifiable(allowlistAddresses)
           : this.allowlistAddresses,
       virtualDevicesEnabled: virtualDevicesEnabled ?? this.virtualDevicesEnabled,
+      allowedHidDeviceTypes:
+          allowedHidDeviceTypes ?? this.allowedHidDeviceTypes,
     );
   }
 
@@ -199,7 +241,8 @@ class Bluepad32State {
         other.mappings == mappings &&
         other.allowlistEnabled == allowlistEnabled &&
         listEquals(other.allowlistAddresses, allowlistAddresses) &&
-        other.virtualDevicesEnabled == virtualDevicesEnabled;
+        other.virtualDevicesEnabled == virtualDevicesEnabled &&
+        other.allowedHidDeviceTypes == allowedHidDeviceTypes;
   }
 
   @override
@@ -219,5 +262,6 @@ class Bluepad32State {
         allowlistEnabled,
         Object.hashAll(allowlistAddresses),
         virtualDevicesEnabled,
+        allowedHidDeviceTypes,
       );
 }

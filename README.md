@@ -20,9 +20,10 @@ and update runtime settings without a serial console or firmware reflash.
 * **Live Controller Monitor (`AC05`, `AC0A`):** Shows connected controllers in
     real time (model, MAC address, Vendor/Product ID, and state). You can
     disconnect individual slots remotely (`AC0A`).
-* **Radio & Pairing Controls (`AC03`, `AC04`, `AC09`):** Toggles controller
-    scanning, BLE controller connections, and virtual child devices (such as
-    DualShock 4 and DualSense touchpad mice).
+* **Radio & Pairing Controls (`AC03`, `AC04`, `AC09`, `AC10`):** Toggles controller
+    scanning, BLE controller connections, virtual child devices (such as
+    DualShock 4 and DualSense touchpad mice), and allowed HID device categories
+    (**Gamepads**, **Mice**, **Keyboards**).
 * **Controller Button Mappings & Custom Remapping Matrix (`AC06`, `AC0F`):**
     Selects **Xbox**, **Nintendo Switch**, or **Custom** presets (`AC06`). The
     interactive **Custom Remapping Matrix** editor (`AC0F`) configures all 28
@@ -117,8 +118,10 @@ shows a **Locked** badge. Enter the password (`1–31` UTF-8 bytes) and tap
 * **Connected Controllers (`AC05`, `AC0A`):** Shows connected gamepads in real
     time (slot index, model name, Bluetooth MAC address, `VID:PID`, state, and
     direction). Tap **Disconnect** on any slot to disconnect that controller.
-* **Connections & Security (`AC03`, `AC04`, `AC07`):** Toggles **BLE Connections
-    Enabled**, **Scan / Pair New Controllers**, and **Enforce Allowlist**.
+* **Connections & Security (`AC03`, `AC04`, `AC07`, `AC10`):** Toggles **BLE
+    Connections Enabled**, **Scan / Pair New Controllers**, **Enforce
+    Allowlist**, and **Allowed HID Device Types** (**Gamepads**, **Mice**,
+    **Keyboards**).
 * **Bluetooth Allowlist (`AC08`):** Tap **+ Add MAC Address** to add an allowed
     controller MAC address (`AA:BB:CC:DD:EE:FF`). Tap the trash icon to remove
     an existing entry.

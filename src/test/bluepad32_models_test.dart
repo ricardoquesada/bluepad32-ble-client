@@ -103,7 +103,19 @@ void main() {
         Bluepad32Uuids.shortNames['ac0f'],
         equals('Custom Mappings (AC0F)'),
       );
-      expect(Bluepad32Uuids.allCharacteristics, hasLength(15));
+      expect(
+        Bluepad32Uuids.hidAllowTypes,
+        Guid('4627c4a4-ac10-46b9-b688-afc5c1bf7f63'),
+      );
+      expect(
+        Bluepad32Uuids.hidAllowTypesUuid,
+        equals('4627c4a4-ac10-46b9-b688-afc5c1bf7f63'),
+      );
+      expect(
+        Bluepad32Uuids.shortNames['ac10'],
+        equals('Allowed HID Device Types (AC10)'),
+      );
+      expect(Bluepad32Uuids.allCharacteristics, hasLength(16));
     });
 
     test('Bluepad32Uuids aliases match primary characteristic UUIDs', () {
@@ -126,6 +138,7 @@ void main() {
       expect(Bluepad32Uuids.ac0d, equals(Bluepad32Uuids.serviceName));
       expect(Bluepad32Uuids.ac0e, equals(Bluepad32Uuids.serviceAuth));
       expect(Bluepad32Uuids.ac0f, equals(Bluepad32Uuids.customMappings));
+      expect(Bluepad32Uuids.ac10, equals(Bluepad32Uuids.hidAllowTypes));
     });
   });
 
@@ -2076,14 +2089,15 @@ void main() {
         contains('Bluepad32 GATT service (${Bluepad32Uuids.service}) not found on device.'),
       );
 
-      // 3. Legacy firmware compatibility: only AC01..AC0C present (AC0D, AC0E, AC0F absent).
+      // 3. Legacy firmware compatibility: only AC01..AC0C present (AC0D, AC0E, AC0F, AC10 absent).
       final Map<Guid, _FakeBluetoothCharacteristic> chars =
           <Guid, _FakeBluetoothCharacteristic>{};
       for (final Guid uuid in Bluepad32Uuids.allCharacteristics.where(
         (Guid u) =>
             u != Bluepad32Uuids.serviceName &&
             u != Bluepad32Uuids.serviceAuth &&
-            u != Bluepad32Uuids.customMappings,
+            u != Bluepad32Uuids.customMappings &&
+            u != Bluepad32Uuids.hidAllowTypes,
       )) {
         chars[uuid] = _FakeBluetoothCharacteristic(
           remoteId: device.remoteId,
@@ -2115,6 +2129,10 @@ void main() {
       expect(client.state.firmwareVersion, equals('v4.4.0'));
       expect(client.state.serviceName, isEmpty);
       expect(client.state.authStatus, equals(Bluepad32AuthStatus.open));
+      expect(
+        client.state.allowedHidDeviceTypes,
+        equals(Bluepad32HidDeviceTypes.all),
+      );
       expect(chars[Bluepad32Uuids.connectedDevices]!.notifyEnabled, isTrue);
 
       // Emit an AC05 notification over onValueReceived
@@ -2348,6 +2366,86 @@ void main() {
         expect(
           lockedClient.state.mappings.customMappings,
           equals(CustomGamepadMappings.switchPreset()),
+        );
+      },
+    );
+
+    test(
+      'FL-CLI-07: AC10 (hidAllowTypes) read, write, bit toggling, validation (0x0d/0x13), and auth gating (0x05)',
+      () async {
+        final FakeBluepad32GattTransport transport = FakeBluepad32GattTransport(
+          allowedHidDeviceTypes: Bluepad32HidDeviceTypes.all,
+        );
+        final Bluepad32Client client =
+            Bluepad32Client.test(transport: transport);
+        addTearDown(client.dispose);
+
+        await client.connect();
+        expect(
+          client.state.allowedHidDeviceTypes,
+          equals(Bluepad32HidDeviceTypes.all),
+        );
+        expect(client.state.isGamepadAllowed, isTrue);
+        expect(client.state.isMouseAllowed, isTrue);
+        expect(client.state.isKeyboardAllowed, isTrue);
+
+        // Toggle keyboard off (0x07 -> 0x03)
+        await client.toggleAllowedHidDeviceType(
+          Bluepad32HidDeviceTypes.keyboard,
+          false,
+        );
+        expect(
+          transport.lastWriteFor(Bluepad32Uuids.hidAllowTypes),
+          equals(Uint8List.fromList(<int>[0x03])),
+        );
+        expect(client.state.allowedHidDeviceTypes, equals(0x03));
+        expect(client.state.isGamepadAllowed, isTrue);
+        expect(client.state.isMouseAllowed, isTrue);
+        expect(client.state.isKeyboardAllowed, isFalse);
+
+        // Set gamepads only (0x01)
+        await client.setAllowedHidDeviceTypes(Bluepad32HidDeviceTypes.gamepad);
+        expect(
+          transport.lastWriteFor(Bluepad32Uuids.hidAllowTypes),
+          equals(Uint8List.fromList(<int>[0x01])),
+        );
+        expect(
+          client.state.allowedHidDeviceTypes,
+          equals(Bluepad32HidDeviceTypes.gamepad),
+        );
+        expect(client.state.isGamepadAllowed, isTrue);
+        expect(client.state.isMouseAllowed, isFalse);
+        expect(client.state.isKeyboardAllowed, isFalse);
+
+        // Reject invalid mask in client before GATT write
+        await client.setAllowedHidDeviceTypes(0x08);
+        expect(
+          client.state.errorMessage,
+          contains('Invalid HID device types mask'),
+        );
+        expect(
+          client.state.allowedHidDeviceTypes,
+          equals(Bluepad32HidDeviceTypes.gamepad),
+        );
+
+        // Transport rejects length != 1 (0x0d) and reserved bits (0x13)
+        await expectLater(
+          () => transport.writeCharacteristic(
+            Bluepad32Uuids.hidAllowTypes,
+            Uint8List.fromList(<int>[0x01, 0x02]),
+          ),
+          throwsA(
+            predicate<Object>((Object e) => e.toString().contains('0x0d')),
+          ),
+        );
+        await expectLater(
+          () => transport.writeCharacteristic(
+            Bluepad32Uuids.hidAllowTypes,
+            Uint8List.fromList(<int>[0x08]),
+          ),
+          throwsA(
+            predicate<Object>((Object e) => e.toString().contains('0x13')),
+          ),
         );
       },
     );
