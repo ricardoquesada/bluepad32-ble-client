@@ -100,7 +100,8 @@ class ConnectedController {
       controllerType: Bluepad32ControllerType.fromValue(
         view.getUint16(13, Endian.little),
       ),
-      controllerSubtype: Bluepad32ControllerSubtype.fromValue(view.getUint8(15)),
+      controllerSubtype:
+          Bluepad32ControllerSubtype.fromValue(view.getUint8(15)),
     );
   }
 
@@ -110,10 +111,13 @@ class ConnectedController {
   /// Trailing unaligned bytes (`bytes.length % 16 != 0`) are ignored.
   static List<ConnectedController> listFromBytes(List<int> bytes) {
     final List<ConnectedController> controllers = <ConnectedController>[];
-    for (int offset = 0; offset + byteLength <= bytes.length; offset += byteLength) {
+    for (int offset = 0;
+        offset + byteLength <= bytes.length;
+        offset += byteLength) {
       controllers.add(ConnectedController.fromBytes(bytes, offset));
     }
-    controllers.sort((ConnectedController a, ConnectedController b) => a.idx.compareTo(b.idx));
+    controllers.sort((ConnectedController a, ConnectedController b) =>
+        a.idx.compareTo(b.idx));
     return controllers;
   }
 
@@ -130,7 +134,8 @@ class ConnectedController {
   /// Formatted 4-digit uppercase hex `VID:PID` string (e.g., `'054C:0CE6'`).
   String get vendorProductHex {
     final String vid = vendorId.toRadixString(16).toUpperCase().padLeft(4, '0');
-    final String pid = productId.toRadixString(16).toUpperCase().padLeft(4, '0');
+    final String pid =
+        productId.toRadixString(16).toUpperCase().padLeft(4, '0');
     return '$vid:$pid';
   }
 

@@ -1,0 +1,56 @@
+default_install_hook_types:
+  - pre-commit
+  - pre-push
+
+repos:
+  # 1. General repository & cross-platform filesystem hygiene
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        stages: [pre-commit]
+      - id: end-of-file-fixer
+        stages: [pre-commit]
+      - id: check-yaml
+        stages: [pre-commit]
+      - id: check-merge-conflict
+        stages: [pre-commit]
+      - id: check-case-conflict
+        stages: [pre-commit]
+      - id: check-added-large-files
+        args: ["--maxkb=1024"]
+        stages: [pre-commit]
+
+  # 2. GitHub Actions workflow validation (.github/workflows/release.yml)
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.7
+    hooks:
+      - id: actionlint
+        stages: [pre-commit]
+
+  # 3. Dart / Flutter toolchain hooks (scoped to src/)
+  - repo: local
+    hooks:
+      - id: dart-format
+        name: dart format
+        entry: dart format --set-exit-if-changed
+        language: system
+        types: [dart]
+        files: ^src/(lib|test)/.*\.dart$
+        stages: [pre-commit]
+
+      - id: flutter-analyze
+        name: flutter analyze
+        entry: bash -c 'cd src && flutter analyze --no-pub'
+        language: system
+        files: ^src/(lib/|test/|pubspec\.(yaml|lock)$|analysis_options\.yaml$)
+        pass_filenames: false
+        stages: [pre-commit]
+
+      - id: flutter-test
+        name: flutter test
+        entry: bash -c 'cd src && flutter test --no-pub'
+        language: system
+        files: ^src/(lib/|test/|pubspec\.(yaml|lock)$)
+        pass_filenames: false
+        stages: [pre-push]

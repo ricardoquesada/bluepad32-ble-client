@@ -30,7 +30,9 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('Bluepad32Uuids', () {
-    test('FL-UUID-01: defines primary service and contiguous AC01..AC0F characteristics', () {
+    test(
+        'FL-UUID-01: defines primary service and contiguous AC01..AC0F characteristics',
+        () {
       expect(
         Bluepad32Uuids.service,
         Guid('4627c4a4-ac00-46b9-b688-afc5c1bf7f63'),
@@ -143,7 +145,9 @@ void main() {
   });
 
   group('3.1 ConnectedController Binary Deserialization & Occupancy', () {
-    test('parses 16-byte single-slot notification payload (DualSense on slot 1)', () {
+    test(
+        'parses 16-byte single-slot notification payload (DualSense on slot 1)',
+        () {
       final List<int> payload = <int>[
         0x01, // idx = 1
         0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, // addr = AA:BB:CC:DD:EE:FF
@@ -155,7 +159,8 @@ void main() {
         0x00, // controller_subtype = 0 (NONE)
       ];
 
-      final ConnectedController controller = ConnectedController.fromBytes(payload);
+      final ConnectedController controller =
+          ConnectedController.fromBytes(payload);
 
       expect(controller.idx, 1);
       expect(controller.address.toString(), 'AA:BB:CC:DD:EE:FF');
@@ -211,7 +216,8 @@ void main() {
           ConnectedController.listFromBytes(fullTable);
 
       expect(controllers, hasLength(4));
-      expect(controllers.map((ConnectedController c) => c.idx), <int>[0, 1, 2, 3]);
+      expect(
+          controllers.map((ConnectedController c) => c.idx), <int>[0, 1, 2, 3]);
       expect(controllers[0].isConnected, isTrue);
       expect(
         controllers[0].controllerType,
@@ -315,7 +321,9 @@ void main() {
       expect(caseD.isOccupied, isFalse);
     });
 
-    test('ConnectedController equality, hashCode, toString, and negative offset guard', () {
+    test(
+        'ConnectedController equality, hashCode, toString, and negative offset guard',
+        () {
       final ConnectedController a = ConnectedController(
         idx: 1,
         address: MacAddress.parse('AA:BB:CC:DD:EE:FF'),
@@ -425,7 +433,9 @@ void main() {
       expect(mac.toBytes(), equals(Uint8List.fromList(raw)));
     });
 
-    test('MacAddress.fromBytes throws RangeError on negative offset or short buffer', () {
+    test(
+        'MacAddress.fromBytes throws RangeError on negative offset or short buffer',
+        () {
       expect(
         () => MacAddress.fromBytes(const <int>[1, 2, 3, 4, 5, 6], -1),
         throwsRangeError,
@@ -482,8 +492,18 @@ void main() {
         twelveBytes,
         equals(
           Uint8List.fromList(<int>[
-            0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF,
-            0x11, 0x22, 0x33, 0x44, 0x55, 0x66,
+            0xAA,
+            0xBB,
+            0xCC,
+            0xDD,
+            0xEE,
+            0xFF,
+            0x11,
+            0x22,
+            0x33,
+            0x44,
+            0x55,
+            0x66,
           ]),
         ),
       );
@@ -550,12 +570,14 @@ void main() {
       expect(
         updated.hashCode,
         equals(
-          const GamepadMappings(type: GamepadMappingsType.switchLayout).hashCode,
+          const GamepadMappings(type: GamepadMappingsType.switchLayout)
+              .hashCode,
         ),
       );
     });
 
-    test('GamepadMappingsType.fromValue fallback and GamepadMappings.toString', () {
+    test('GamepadMappingsType.fromValue fallback and GamepadMappings.toString',
+        () {
       expect(
         GamepadMappingsType.fromValue(99),
         equals(GamepadMappingsType.xbox),
@@ -580,7 +602,9 @@ void main() {
       );
     });
 
-    test('FL-MOD-01: target enum values, labels, isValidValue, and out-of-range fallback', () {
+    test(
+        'FL-MOD-01: target enum values, labels, isValidValue, and out-of-range fallback',
+        () {
       // 1. GamepadDpadTarget (up=0, down=1, right=2, left=3)
       expect(GamepadDpadTarget.up.value, equals(0));
       expect(GamepadDpadTarget.down.value, equals(1));
@@ -606,7 +630,8 @@ void main() {
       expect(GamepadButtonTarget.triggerR.value, equals(7));
       expect(GamepadButtonTarget.thumbL.value, equals(8));
       expect(GamepadButtonTarget.thumbR.value, equals(9));
-      expect(GamepadButtonTarget.fromValue(9), equals(GamepadButtonTarget.thumbR));
+      expect(
+          GamepadButtonTarget.fromValue(9), equals(GamepadButtonTarget.thumbR));
       expect(GamepadButtonTarget.fromValue(10), equals(GamepadButtonTarget.a));
       expect(GamepadButtonTarget.isValidValue(9), isTrue);
       expect(GamepadButtonTarget.isValidValue(10), isFalse);
@@ -663,7 +688,9 @@ void main() {
       expect(GamepadPedalInput.throttle, equals(GamepadPedalTarget.throttle));
     });
 
-    test('FL-MOD-02: CustomGamepadMappings.defaultXbox 28-byte serialization & asymmetric field ordering', () {
+    test(
+        'FL-MOD-02: CustomGamepadMappings.defaultXbox 28-byte serialization & asymmetric field ordering',
+        () {
       expect(CustomGamepadMappings.byteLength, equals(28));
       expect(CustomGamepadMappings.payloadLength, equals(28));
       expect(
@@ -700,7 +727,9 @@ void main() {
       );
     });
 
-    test('FL-MOD-03: CustomGamepadMappings.nintendoSwitch preset, swapSticks, and 28-field copyWith', () {
+    test(
+        'FL-MOD-03: CustomGamepadMappings.nintendoSwitch preset, swapSticks, and 28-field copyWith',
+        () {
       expect(
         CustomGamepadMappings.switchPreset(),
         equals(CustomGamepadMappings.nintendoSwitch),
@@ -728,7 +757,8 @@ void main() {
       expect(CustomGamepadMappings.nintendoSwitch.isDefault, isFalse);
       expect(CustomGamepadMappings.nintendoSwitch.modifiedCount, equals(4));
 
-      final CustomGamepadMappings roundTripped = CustomGamepadMappings.fromBytes(
+      final CustomGamepadMappings roundTripped =
+          CustomGamepadMappings.fromBytes(
         CustomGamepadMappings.nintendoSwitch.toBytes(),
       );
       expect(roundTripped, equals(CustomGamepadMappings.nintendoSwitch));
@@ -785,7 +815,9 @@ void main() {
       expect(allChanged == Object(), isFalse);
     });
 
-    test('FL-MOD-04: CustomGamepadMappings.fromBytes offset support, RangeError, and isValidPayload across all 28 fields', () {
+    test(
+        'FL-MOD-04: CustomGamepadMappings.fromBytes offset support, RangeError, and isValidPayload across all 28 fields',
+        () {
       final Uint8List atomic29 = Uint8List.fromList(<int>[
         GamepadMappingsType.custom.value,
         ...CustomGamepadMappings.nintendoSwitch.toBytes(),
@@ -837,7 +869,8 @@ void main() {
         expect(
           CustomGamepadMappings.isValidPayload(copyMax),
           isTrue,
-          reason: 'Offset $i with max valid ${maxValidPerOffset[i]} should be valid',
+          reason:
+              'Offset $i with max valid ${maxValidPerOffset[i]} should be valid',
         );
 
         final List<int> copyOver = List<int>.from(valid);
@@ -845,7 +878,8 @@ void main() {
         expect(
           CustomGamepadMappings.isValidPayload(copyOver),
           isFalse,
-          reason: 'Offset $i with ${maxValidPerOffset[i] + 1} should be invalid',
+          reason:
+              'Offset $i with ${maxValidPerOffset[i] + 1} should be invalid',
         );
 
         final List<int> copyNeg = List<int>.from(valid);
@@ -858,7 +892,9 @@ void main() {
       }
     });
 
-    test('FL-GM-01..06: GamepadMappings multi-length decoding (0, 1, 2, 28, 29 bytes), atomic serialization, and toString()', () {
+    test(
+        'FL-GM-01..06: GamepadMappings multi-length decoding (0, 1, 2, 28, 29 bytes), atomic serialization, and toString()',
+        () {
       // FL-GM-00 / 01: 0 bytes
       final GamepadMappings gm0 = GamepadMappings.fromBytes(const <int>[]);
       expect(gm0.type, equals(GamepadMappingsType.xbox));
@@ -953,7 +989,9 @@ void main() {
       );
     });
 
-    test('maps Bluepad32ControllerSubtype.fromValue for known and unknown values', () {
+    test(
+        'maps Bluepad32ControllerSubtype.fromValue for known and unknown values',
+        () {
       expect(
         Bluepad32ControllerSubtype.fromValue(0),
         Bluepad32ControllerSubtype.none,
@@ -1014,13 +1052,15 @@ void main() {
       expect(ready, Bluepad32DeviceState.deviceReady);
       expect(ready.isReady, isTrue);
 
-      final Bluepad32DeviceState outOfRange = Bluepad32DeviceState.fromValue(99);
+      final Bluepad32DeviceState outOfRange =
+          Bluepad32DeviceState.fromValue(99);
       expect(outOfRange, Bluepad32DeviceState.unknown);
       expect(outOfRange.isReady, isFalse);
     });
 
     test('label getters and icon switch branches', () {
-      for (final Bluepad32ControllerType type in Bluepad32ControllerType.values) {
+      for (final Bluepad32ControllerType type
+          in Bluepad32ControllerType.values) {
         expect(type.label, equals(type.displayName));
       }
       for (final Bluepad32ControllerSubtype subtype
@@ -1031,7 +1071,8 @@ void main() {
         expect(state.label, equals(state.displayName));
       }
 
-      expect(Bluepad32ControllerType.genericKeyboard.icon, equals(Icons.keyboard));
+      expect(
+          Bluepad32ControllerType.genericKeyboard.icon, equals(Icons.keyboard));
       expect(Bluepad32ControllerType.genericMouse.icon, equals(Icons.mouse));
       expect(
         Bluepad32ControllerType.smartTvRemoteController.icon,
@@ -1092,7 +1133,9 @@ void main() {
       expect(cleared.firmwareVersion, 'v4.2.0');
     });
 
-    test('Bluepad32State operator == and hashCode across nested lists and scalar fields', () {
+    test(
+        'Bluepad32State operator == and hashCode across nested lists and scalar fields',
+        () {
       final ConnectedController slot0 = ConnectedController(
         idx: 0,
         address: MacAddress.parse('AA:BB:CC:11:22:33'),
@@ -1212,7 +1255,9 @@ void main() {
       expect(clearedName.isAuthenticated, isTrue);
     });
 
-    test('Bluepad32AuthStatus.fromByte and fromBytes decode open, required, authenticated, and fallbacks', () {
+    test(
+        'Bluepad32AuthStatus.fromByte and fromBytes decode open, required, authenticated, and fallbacks',
+        () {
       expect(Bluepad32AuthStatus.open.value, equals(0));
       expect(Bluepad32AuthStatus.required.value, equals(1));
       expect(Bluepad32AuthStatus.authenticated.value, equals(2));
@@ -1254,7 +1299,9 @@ void main() {
   });
 
   group('4.1 Bluepad32Client Service & Fake Characteristic Interaction', () {
-    test('hydrates AC01..AC09 on connect() and merges 16-byte AC05 notifications', () async {
+    test(
+        'hydrates AC01..AC09 on connect() and merges 16-byte AC05 notifications',
+        () async {
       final ConnectedController slot0 = ConnectedController(
         idx: 0,
         address: MacAddress.parse('AA:BB:CC:11:22:33'),
@@ -1339,7 +1386,9 @@ void main() {
       expect(client.state.controllers[3].isConnected, isFalse);
     });
 
-    test('writes 6 zero bytes (00:00:00:00:00:00) to AC08 when clearing last allowlist MAC', () async {
+    test(
+        'writes 6 zero bytes (00:00:00:00:00:00) to AC08 when clearing last allowlist MAC',
+        () async {
       final MacAddress mac = MacAddress.parse('AA:BB:CC:DD:EE:FF');
       final FakeBluepad32GattTransport transport = FakeBluepad32GattTransport(
         allowlistAddresses: <MacAddress>[mac],
@@ -1363,7 +1412,9 @@ void main() {
       expect(written, equals(Uint8List(6)));
     });
 
-    test('handles immediate disconnection exception on resetDevice() (AC0C) gracefully', () async {
+    test(
+        'handles immediate disconnection exception on resetDevice() (AC0C) gracefully',
+        () async {
       final FakeBluepad32GattTransport transport = FakeBluepad32GattTransport();
       transport.setWriteError(
         Bluepad32Uuids.resetDevice,
@@ -1391,7 +1442,9 @@ void main() {
       expect(client.state.errorMessage, isNull);
     });
 
-    test('executes GATT write actions for toggles, mappings, disconnect, and bond keys', () async {
+    test(
+        'executes GATT write actions for toggles, mappings, disconnect, and bond keys',
+        () async {
       final ConnectedController occupiedSlot0 = ConnectedController(
         idx: 0,
         address: MacAddress.parse('AA:BB:CC:11:22:33'),
@@ -1463,7 +1516,9 @@ void main() {
       );
     });
 
-    test('connect() failure sets errorMessage and resets isConnecting/isConnected', () async {
+    test(
+        'connect() failure sets errorMessage and resets isConnecting/isConnected',
+        () async {
       final FakeBluepad32GattTransport transport = FakeBluepad32GattTransport()
         ..connectError = FlutterBluePlusException(
           ErrorPlatform.fbp,
@@ -1488,7 +1543,9 @@ void main() {
       );
     });
 
-    test('disconnect() failure sets errorMessage and transitions isConnected to false', () async {
+    test(
+        'disconnect() failure sets errorMessage and transitions isConnected to false',
+        () async {
       final FakeBluepad32GattTransport transport = FakeBluepad32GattTransport()
         ..disconnectError = StateError('GATT link broken');
       final Bluepad32Client client = Bluepad32Client.test(
@@ -1514,7 +1571,9 @@ void main() {
       expect(client.state.errorMessage, isNull);
     });
 
-    test('refreshAll() read error and fallback defaults for empty version / zero maxConnections', () async {
+    test(
+        'refreshAll() read error and fallback defaults for empty version / zero maxConnections',
+        () async {
       final FakeBluepad32GattTransport transport = FakeBluepad32GattTransport();
       transport.setCharacteristicValue(
         Bluepad32Uuids.version,
@@ -1553,7 +1612,9 @@ void main() {
       expect(client.state.errorMessage, isNull);
     });
 
-    test('unsolicited connectionStateStream disconnect transitions state only when not connecting', () async {
+    test(
+        'unsolicited connectionStateStream disconnect transitions state only when not connecting',
+        () async {
       final FakeBluepad32GattTransport transport = FakeBluepad32GattTransport();
       final Bluepad32Client client = Bluepad32Client.test(
         transport: transport,
@@ -1580,7 +1641,9 @@ void main() {
       expect(client.state.isRefreshing, isFalse);
     });
 
-    test('write errors across AC03–AC0C preserve prior state and populate errorMessage', () async {
+    test(
+        'write errors across AC03–AC0C preserve prior state and populate errorMessage',
+        () async {
       final ConnectedController occupiedSlot0 = ConnectedController(
         idx: 0,
         address: MacAddress.parse('AA:BB:CC:11:22:33'),
@@ -1723,7 +1786,9 @@ void main() {
       );
     });
 
-    test('resetDevice() treats string-matched disconnection exceptions and clean write as expected reboot', () async {
+    test(
+        'resetDevice() treats string-matched disconnection exceptions and clean write as expected reboot',
+        () async {
       final FakeBluepad32GattTransport transport = FakeBluepad32GattTransport();
       final Bluepad32Client client = Bluepad32Client.test(
         transport: transport,
@@ -1766,7 +1831,9 @@ void main() {
       expect(client.state.errorMessage, isNull);
     });
 
-    test('allowlist guards: zero MAC rejection, duplicate no-op, and deduplication', () async {
+    test(
+        'allowlist guards: zero MAC rejection, duplicate no-op, and deduplication',
+        () async {
       final MacAddress macA = MacAddress.parse('AA:BB:CC:DD:EE:01');
       final FakeBluepad32GattTransport transport = FakeBluepad32GattTransport();
       final Bluepad32Client client = Bluepad32Client.test(
@@ -1813,7 +1880,9 @@ void main() {
       );
     });
 
-    test('clearError, updateStateForTesting, transport getter, and post-dispose safety', () async {
+    test(
+        'clearError, updateStateForTesting, transport getter, and post-dispose safety',
+        () async {
       final FakeBluepad32GattTransport transport = FakeBluepad32GattTransport();
       final Bluepad32Client client = Bluepad32Client.test(
         transport: transport,
@@ -1856,7 +1925,9 @@ void main() {
       expect(client.state.firmwareVersion, isNull);
     });
 
-    test('open vs password-protected connect(), refreshAll(), and authenticate() lifecycle (AC0D & AC0E)', () async {
+    test(
+        'open vs password-protected connect(), refreshAll(), and authenticate() lifecycle (AC0D & AC0E)',
+        () async {
       // 1. Open peripheral (password: null)
       final FakeBluepad32GattTransport openTransport =
           FakeBluepad32GattTransport(
@@ -1877,7 +1948,8 @@ void main() {
       expect(openClient.state.requiresAuthentication, isFalse);
       expect(openClient.state.isPasswordProtected, isFalse);
       expect(openTransport.notificationsEnabled, isTrue);
-      expect(openTransport.readCounts[Bluepad32Uuids.maxConnections], equals(1));
+      expect(
+          openTransport.readCounts[Bluepad32Uuids.maxConnections], equals(1));
 
       // 2. Password-locked peripheral (password: '1234')
       final FakeBluepad32GattTransport lockedTransport =
@@ -1922,7 +1994,8 @@ void main() {
 
       // 3. Failed authenticate() attempts: empty, >31 UTF-8 bytes, and wrong password.
       expect(await lockedClient.authenticate(''), isFalse);
-      expect(lockedClient.state.errorMessage, equals('Password cannot be empty.'));
+      expect(
+          lockedClient.state.errorMessage, equals('Password cannot be empty.'));
       expect(lockedTransport.writesFor(Bluepad32Uuids.serviceAuth), isEmpty);
 
       final String oversizedPass = 'A' * 32;
@@ -1963,7 +2036,8 @@ void main() {
       expect(lockedClient.state.isPasswordProtected, isTrue);
       expect(lockedClient.state.errorMessage, isNull);
       expect(lockedTransport.notificationsEnabled, isTrue);
-      expect(lockedTransport.readCounts[Bluepad32Uuids.maxConnections], equals(1));
+      expect(
+          lockedTransport.readCounts[Bluepad32Uuids.maxConnections], equals(1));
       expect(lockedClient.state.bleEnabled, isTrue);
 
       // Verify subsequent AC05 notifications are delivered and merged into state.controllers.
@@ -1983,7 +2057,9 @@ void main() {
       expect(lockedClient.state.controllers[0], equals(slot0));
     });
 
-    test('setServiceName() validates UTF-8 byte length (1..29 bytes), updates AC0D, and handles errors', () async {
+    test(
+        'setServiceName() validates UTF-8 byte length (1..29 bytes), updates AC0D, and handles errors',
+        () async {
       final FakeBluepad32GattTransport transport = FakeBluepad32GattTransport(
         serviceName: 'Bluepad32 rc car',
       );
@@ -2016,10 +2092,12 @@ void main() {
       final int writesBeforeInvalid =
           transport.writesFor(Bluepad32Uuids.serviceName).length;
       await client.setServiceName('');
-      expect(client.state.errorMessage, equals('Service name cannot be empty.'));
+      expect(
+          client.state.errorMessage, equals('Service name cannot be empty.'));
       expect(client.state.serviceName, equals(exact29));
       await client.setServiceName('   ');
-      expect(client.state.errorMessage, equals('Service name cannot be empty.'));
+      expect(
+          client.state.errorMessage, equals('Service name cannot be empty.'));
       expect(client.state.serviceName, equals(exact29));
 
       // 4. Oversized ASCII (30 bytes) and multi-byte UTF-8 (10 x 3-byte chars = 30 bytes) rejected before GATT write
@@ -2055,7 +2133,9 @@ void main() {
       );
     });
 
-    test('Bluepad32Client(device: ...) exercises _DeviceBluepad32GattTransport discovery, read/write, notifications, legacy firmware fallback, and missing service/characteristic errors', () async {
+    test(
+        'Bluepad32Client(device: ...) exercises _DeviceBluepad32GattTransport discovery, read/write, notifications, legacy firmware fallback, and missing service/characteristic errors',
+        () async {
       final _FakeGattBluetoothDevice device = _FakeGattBluetoothDevice(
         id: 'AA:BB:CC:DD:EE:10',
       );
@@ -2066,12 +2146,14 @@ void main() {
       await client.refreshAll();
       expect(
         client.state.errorMessage,
-        contains('GATT characteristic ${Bluepad32Uuids.version} is not available.'),
+        contains(
+            'GATT characteristic ${Bluepad32Uuids.version} is not available.'),
       );
       await client.setBleEnabled(true);
       expect(
         client.state.errorMessage,
-        contains('GATT characteristic ${Bluepad32Uuids.bleEnabled} is not available.'),
+        contains(
+            'GATT characteristic ${Bluepad32Uuids.bleEnabled} is not available.'),
       );
 
       // 2. When discoverServices() returns only an unrelated service, connect() reports missing Bluepad32 service
@@ -2086,7 +2168,8 @@ void main() {
       expect(client.state.isConnected, isFalse);
       expect(
         client.state.errorMessage,
-        contains('Bluepad32 GATT service (${Bluepad32Uuids.service}) not found on device.'),
+        contains(
+            'Bluepad32 GATT service (${Bluepad32Uuids.service}) not found on device.'),
       );
 
       // 3. Legacy firmware compatibility: only AC01..AC0C present (AC0D, AC0E, AC0F, AC10 absent).
@@ -2284,8 +2367,9 @@ void main() {
         legacyChars[Bluepad32Uuids.allowlistEnabled]!.valueToRead = <int>[0];
         legacyChars[Bluepad32Uuids.allowlistAddresses]!.valueToRead =
             const <int>[];
-        legacyChars[Bluepad32Uuids.virtualDeviceEnabled]!.valueToRead =
-            <int>[1];
+        legacyChars[Bluepad32Uuids.virtualDeviceEnabled]!.valueToRead = <int>[
+          1
+        ];
         legacyChars[Bluepad32Uuids.serviceName]!.valueToRead =
             utf8.encode('Legacy Node');
         legacyChars[Bluepad32Uuids.serviceAuth]!.valueToRead = <int>[0];

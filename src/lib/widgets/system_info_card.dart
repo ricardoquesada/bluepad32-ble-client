@@ -78,8 +78,12 @@ class SystemInfoCard extends StatelessWidget {
         !state.requiresAuthentication &&
         onRenameService != null;
 
-    final (String statusLabel, Color badgeBg, Color badgeFg, IconData statusIcon) =
-        switch ((state.isConnecting, state.isConnected)) {
+    final (
+      String statusLabel,
+      Color badgeBg,
+      Color badgeFg,
+      IconData statusIcon
+    ) = switch ((state.isConnecting, state.isConnected)) {
       (true, _) => (
           'Connecting...',
           colorScheme.tertiaryContainer,

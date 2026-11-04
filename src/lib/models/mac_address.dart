@@ -91,7 +91,9 @@ class MacAddress {
   /// any all-zero (`00:00:00:00:00:00`) sentinel entries.
   static List<MacAddress> listFromBytes(List<int> bytes) {
     final List<MacAddress> result = <MacAddress>[];
-    for (int offset = 0; offset + byteLength <= bytes.length; offset += byteLength) {
+    for (int offset = 0;
+        offset + byteLength <= bytes.length;
+        offset += byteLength) {
       final MacAddress address = MacAddress.fromBytes(bytes, offset);
       if (!address.isZero) {
         result.add(address);

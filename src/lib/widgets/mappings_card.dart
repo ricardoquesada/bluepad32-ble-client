@@ -164,14 +164,14 @@ class MappingsCard extends StatelessWidget {
                           ),
                       ],
                       selected: <GamepadMappingsType>{mappings.type},
-                      onSelectionChanged: enabled &&
-                              onMappingsTypeChanged != null
-                          ? (Set<GamepadMappingsType> selection) {
-                              if (selection.isNotEmpty) {
-                                onMappingsTypeChanged!(selection.first);
-                              }
-                            }
-                          : null,
+                      onSelectionChanged:
+                          enabled && onMappingsTypeChanged != null
+                              ? (Set<GamepadMappingsType> selection) {
+                                  if (selection.isNotEmpty) {
+                                    onMappingsTypeChanged!(selection.first);
+                                  }
+                                }
+                              : null,
                     ),
                   ),
                 ],

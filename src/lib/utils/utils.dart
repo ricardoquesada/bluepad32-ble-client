@@ -21,7 +21,9 @@ class StreamControllerReemit<T> {
   /// Broadcast stream that immediately emits [value] (when non-null) to each
   /// new listener before forwarding subsequent events.
   Stream<T> get stream {
-    return _latestValue != null ? _controller.stream.newStreamWithInitialValue(_latestValue as T) : _controller.stream;
+    return _latestValue != null
+        ? _controller.stream.newStreamWithInitialValue(_latestValue as T)
+        : _controller.stream;
   }
 
   /// Most recently emitted value, or the initial value if no events have been
@@ -55,7 +57,8 @@ extension StreamNewStreamWithInitialValue<T> on Stream<T> {
 ///
 /// Preserves single-subscription vs. broadcast semantics and manages the
 /// upstream subscription lifecycle across multiple broadcast listeners.
-class _NewStreamWithInitialValueTransformer<T> extends StreamTransformerBase<T, T> {
+class _NewStreamWithInitialValueTransformer<T>
+    extends StreamTransformerBase<T, T> {
   /// The initial value pushed to the transformed stream upon subscription.
   final T initialValue;
 

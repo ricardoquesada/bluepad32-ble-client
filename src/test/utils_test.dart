@@ -82,7 +82,9 @@ class TestBluetoothDevice extends BluetoothDevice {
 
 void main() {
   group('2.1 StreamControllerReemit & StreamNewStreamWithInitialValue', () {
-    test('StreamControllerReemit caches initialValue, re-emits on subscription, and updates on add', () async {
+    test(
+        'StreamControllerReemit caches initialValue, re-emits on subscription, and updates on add',
+        () async {
       final StreamControllerReemit<int> reemit =
           StreamControllerReemit<int>(initialValue: 10);
 
@@ -118,7 +120,8 @@ void main() {
       await reemit.close();
     });
 
-    test('StreamControllerReemit with null initialValue only emits after add', () async {
+    test('StreamControllerReemit with null initialValue only emits after add',
+        () async {
       final StreamControllerReemit<String> reemit =
           StreamControllerReemit<String>();
 
@@ -139,9 +142,12 @@ void main() {
       await reemit.close();
     });
 
-    test('StreamNewStreamWithInitialValue on broadcast stream handles listeners, errors, and done', () async {
+    test(
+        'StreamNewStreamWithInitialValue on broadcast stream handles listeners, errors, and done',
+        () async {
       final StreamController<int> source = StreamController<int>.broadcast();
-      final Stream<int> transformed = source.stream.newStreamWithInitialValue(0);
+      final Stream<int> transformed =
+          source.stream.newStreamWithInitialValue(0);
 
       final List<int> data = <int>[];
       final List<Object> errors = <Object>[];
@@ -172,7 +178,9 @@ void main() {
       await sub1.cancel();
     });
 
-    test('StreamNewStreamWithInitialValue on single-subscription stream forwards pause, resume, error, and done', () async {
+    test(
+        'StreamNewStreamWithInitialValue on single-subscription stream forwards pause, resume, error, and done',
+        () async {
       final StreamController<int> source = StreamController<int>();
       final Stream<int> transformed =
           source.stream.newStreamWithInitialValue(42);
@@ -214,7 +222,9 @@ void main() {
   });
 
   group('2.2 Snackbar & prettyException', () {
-    test('prettyException formats FlutterBluePlusException, PlatformException, and generic errors', () {
+    test(
+        'prettyException formats FlutterBluePlusException, PlatformException, and generic errors',
+        () {
       expect(
         prettyException(
           'Prefix:',
@@ -235,7 +245,9 @@ void main() {
       );
     });
 
-    testWidgets('Snackbar.getSnackbar and Snackbar.show render success and error SnackBars', (WidgetTester tester) async {
+    testWidgets(
+        'Snackbar.getSnackbar and Snackbar.show render success and error SnackBars',
+        (WidgetTester tester) async {
       expect(Snackbar.getSnackbar(ABC.a), same(Snackbar.snackBarKeyA));
       expect(Snackbar.getSnackbar(ABC.b), same(Snackbar.snackBarKeyB));
       expect(Snackbar.getSnackbar(ABC.c), same(Snackbar.snackBarKeyC));
@@ -267,7 +279,9 @@ void main() {
   });
 
   group('2.3 Extra Extension on BluetoothDevice', () {
-    test('Extra isConnecting, isDisconnecting, connectAndUpdateStream, and disconnectAndUpdateStream', () async {
+    test(
+        'Extra isConnecting, isDisconnecting, connectAndUpdateStream, and disconnectAndUpdateStream',
+        () async {
       final TestBluetoothDevice device = TestBluetoothDevice(
         id: 'AA:BB:CC:DD:EE:99',
         testPlatformName: 'Bluepad32-Test',

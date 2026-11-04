@@ -23,7 +23,8 @@ enum GamepadMappingsType {
   xbox(0, 'Xbox', 'A (South), B (East), X (West), Y (North)'),
 
   /// Nintendo Switch layout: `B` (South), `A` (East), `Y` (West), `X` (North).
-  switchLayout(1, 'Nintendo Switch', 'B (South), A (East), Y (West), X (North)'),
+  switchLayout(
+      1, 'Nintendo Switch', 'B (South), A (East), Y (West), X (North)'),
 
   /// User-defined custom button remapping applied on the firmware.
   custom(2, 'Custom', 'User-defined custom button remapping');

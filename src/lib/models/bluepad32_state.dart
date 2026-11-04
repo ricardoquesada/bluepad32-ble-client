@@ -142,8 +142,9 @@ class Bluepad32State {
   });
 
   /// Subset of [controllers] that are currently occupied/connected.
-  List<ConnectedController> get activeControllers =>
-      controllers.where((ConnectedController c) => c.isConnected).toList(growable: false);
+  List<ConnectedController> get activeControllers => controllers
+      .where((ConnectedController c) => c.isConnected)
+      .toList(growable: false);
 
   /// Whether gamepad HID devices (`BIT(0)`) are accepted during discovery (`AC10`).
   bool get isGamepadAllowed =>
@@ -163,8 +164,7 @@ class Bluepad32State {
 
   /// Whether the connected peripheral is currently locked and requires a password
   /// write to `AC0E` before telemetry or configuration characteristics can be accessed.
-  bool get requiresAuthentication =>
-      authStatus == Bluepad32AuthStatus.required;
+  bool get requiresAuthentication => authStatus == Bluepad32AuthStatus.required;
 
   /// Whether the current session is authorized to read/write protected characteristics
   /// ([Bluepad32AuthStatus.open] or [Bluepad32AuthStatus.authenticated]).
@@ -199,10 +199,12 @@ class Bluepad32State {
       isConnecting: isConnecting ?? this.isConnecting,
       isConnected: isConnected ?? this.isConnected,
       isRefreshing: isRefreshing ?? this.isRefreshing,
-      errorMessage: clearError ? errorMessage : (errorMessage ?? this.errorMessage),
+      errorMessage:
+          clearError ? errorMessage : (errorMessage ?? this.errorMessage),
       firmwareVersion: firmwareVersion ?? this.firmwareVersion,
-      serviceName:
-          clearServiceName ? (serviceName ?? '') : (serviceName ?? this.serviceName),
+      serviceName: clearServiceName
+          ? (serviceName ?? '')
+          : (serviceName ?? this.serviceName),
       authStatus: authStatus ?? this.authStatus,
       maxConnections: maxConnections ?? this.maxConnections,
       bleEnabled: bleEnabled ?? this.bleEnabled,
@@ -215,7 +217,8 @@ class Bluepad32State {
       allowlistAddresses: allowlistAddresses != null
           ? List<MacAddress>.unmodifiable(allowlistAddresses)
           : this.allowlistAddresses,
-      virtualDevicesEnabled: virtualDevicesEnabled ?? this.virtualDevicesEnabled,
+      virtualDevicesEnabled:
+          virtualDevicesEnabled ?? this.virtualDevicesEnabled,
       allowedHidDeviceTypes:
           allowedHidDeviceTypes ?? this.allowedHidDeviceTypes,
     );

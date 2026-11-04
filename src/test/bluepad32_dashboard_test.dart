@@ -318,13 +318,15 @@ void main() {
           _wrapWithMaterial3(DeviceScreen(client: client)),
         );
 
-        final Finder addButton = find.byKey(const Key('add_mac_address_button'));
+        final Finder addButton =
+            find.byKey(const Key('add_mac_address_button'));
         await tester.ensureVisible(addButton);
         await tester.tap(addButton);
         await tester.pumpAndSettle();
 
         // Enter invalid MAC and try to submit.
-        final Finder textField = find.byKey(const Key('mac_address_text_field'));
+        final Finder textField =
+            find.byKey(const Key('mac_address_text_field'));
         final Finder confirmAddButton = find.byKey(
           const Key('confirm_add_mac_button'),
         );
@@ -433,7 +435,8 @@ void main() {
     testWidgets(
       '6. Danger Zone Card guards Delete Stored Bond Keys (AC0B) and Reset / Reboot Device (AC0C) with confirmation dialogs',
       (WidgetTester tester) async {
-        final FakeBluepad32GattTransport transport = FakeBluepad32GattTransport();
+        final FakeBluepad32GattTransport transport =
+            FakeBluepad32GattTransport();
         final Bluepad32Client client = Bluepad32Client.test(
           transport: transport,
           initialState: const Bluepad32State(isConnected: true),
@@ -455,7 +458,8 @@ void main() {
         expect(find.text('Delete Stored Bond Keys?'), findsOneWidget);
 
         // Cancel first: verify no GATT write is sent.
-        await tester.tap(find.byKey(const Key('cancel_delete_bond_keys_button')));
+        await tester
+            .tap(find.byKey(const Key('cancel_delete_bond_keys_button')));
         await tester.pumpAndSettle();
         expect(
           transport.writesFor(Bluepad32Uuids.deleteStoredKeys),
@@ -738,7 +742,8 @@ void main() {
         // 4. Tap Cancel -> closes dialog without writing to AC08.
         await tester.tap(find.text('Cancel'));
         await tester.pumpAndSettle();
-        expect(find.text('Add MAC Address'), findsOneWidget); // button label only
+        expect(
+            find.text('Add MAC Address'), findsOneWidget); // button label only
         expect(
           transport.writesFor(Bluepad32Uuids.allowlistAddresses),
           isEmpty,
@@ -973,7 +978,8 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.text('6 remapped'), findsOneWidget);
 
-        await tester.tap(find.byKey(const Key('cancel_custom_mappings_button')));
+        await tester
+            .tap(find.byKey(const Key('cancel_custom_mappings_button')));
         await tester.pumpAndSettle();
 
         expect(find.text('Custom Remapping Matrix'), findsNothing);

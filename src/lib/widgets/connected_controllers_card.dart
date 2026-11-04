@@ -125,7 +125,9 @@ class ConnectedControllersCard extends StatelessWidget {
             else
               Column(
                 children: <Widget>[
-                  for (int i = 0; i < activeControllers.length; i++) ...<Widget>[
+                  for (int i = 0;
+                      i < activeControllers.length;
+                      i++) ...<Widget>[
                     if (i > 0) const SizedBox(height: 10),
                     _ControllerSlotTile(
                       controller: activeControllers[i],
@@ -297,9 +299,8 @@ class _ControllerSlotTile extends StatelessWidget {
                 foregroundColor: stateBadgeFg,
               ),
               _BadgeChip(
-                icon: controller.incoming
-                    ? Icons.call_received
-                    : Icons.call_made,
+                icon:
+                    controller.incoming ? Icons.call_received : Icons.call_made,
                 label: controller.incoming ? 'Incoming' : 'Outgoing',
                 backgroundColor: colorScheme.surfaceContainerHighest,
                 foregroundColor: colorScheme.onSurfaceVariant,

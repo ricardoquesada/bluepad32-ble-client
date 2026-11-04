@@ -336,7 +336,9 @@ void main() {
     );
   });
 
-  group('3.3 ScanScreen Discovery, Filtering, Sorting, Lifecycle, & Error Snackbars', () {
+  group(
+      '3.3 ScanScreen Discovery, Filtering, Sorting, Lifecycle, & Error Snackbars',
+      () {
     testWidgets(
       'ScanScreen empty state, scanning spinner/STOP button, and SCAN/STOP callbacks',
       (WidgetTester tester) async {

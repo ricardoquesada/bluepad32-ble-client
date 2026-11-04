@@ -110,8 +110,9 @@ class _ScanResultTileState extends State<ScanResultTile> {
         : (platformName.isNotEmpty
             ? platformName
             : (_isBluepad32 ? 'Bluepad32 Device' : 'Unnamed Device'));
-    final bool hasDistinctCachedName =
-        advName.isNotEmpty && platformName.isNotEmpty && advName != platformName;
+    final bool hasDistinctCachedName = advName.isNotEmpty &&
+        platformName.isNotEmpty &&
+        advName != platformName;
 
     return Column(
       mainAxisAlignment: MainAxisAlignment.start,
@@ -124,7 +125,8 @@ class _ScanResultTileState extends State<ScanResultTile> {
                 name,
                 overflow: TextOverflow.ellipsis,
                 style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: _isBluepad32 ? FontWeight.w600 : FontWeight.normal,
+                  fontWeight:
+                      _isBluepad32 ? FontWeight.w600 : FontWeight.normal,
                 ),
               ),
             ),

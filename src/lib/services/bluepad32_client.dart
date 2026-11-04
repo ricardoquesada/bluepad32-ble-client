@@ -424,7 +424,8 @@ class FakeBluepad32GattTransport implements Bluepad32GattTransport {
 
   /// Configures [writeCharacteristic] for [uuid] to throw the exception returned
   /// by [errorBuilder] after recording the write.
-  void setWriteError(Guid uuid, Object Function(List<int> value)? errorBuilder) {
+  void setWriteError(
+      Guid uuid, Object Function(List<int> value)? errorBuilder) {
     if (errorBuilder == null) {
       _writeThrowers.remove(uuid);
     } else {
@@ -813,7 +814,8 @@ class Bluepad32Client extends ChangeNotifier {
         _state.copyWith(
           isConnecting: false,
           isConnected: false,
-          errorMessage: 'Failed to connect to Bluepad32 device: ${_formatError(e)}',
+          errorMessage:
+              'Failed to connect to Bluepad32 device: ${_formatError(e)}',
         ),
       );
     }
@@ -933,14 +935,14 @@ class Bluepad32Client extends ChangeNotifier {
           GamepadMappings.fromBytes(mappingsBytes);
       final List<int> customMappingsBytes =
           await _readOptionalCharacteristic(Bluepad32Uuids.customMappings);
-      final GamepadMappings mappings = customMappingsBytes.length >=
-                  CustomGamepadMappings.byteLength &&
-              CustomGamepadMappings.isValidPayload(customMappingsBytes)
-          ? baseMappings.copyWith(
-              customMappings:
-                  CustomGamepadMappings.fromBytes(customMappingsBytes),
-            )
-          : baseMappings;
+      final GamepadMappings mappings =
+          customMappingsBytes.length >= CustomGamepadMappings.byteLength &&
+                  CustomGamepadMappings.isValidPayload(customMappingsBytes)
+              ? baseMappings.copyWith(
+                  customMappings:
+                      CustomGamepadMappings.fromBytes(customMappingsBytes),
+                )
+              : baseMappings;
 
       // AC07: Allowlist Enforced (uint8_t)
       final List<int> allowlistEnabledBytes =
@@ -1164,7 +1166,8 @@ class Bluepad32Client extends ChangeNotifier {
     }
 
     final List<ConnectedController> result = byIdx.values.toList()
-      ..sort((ConnectedController a, ConnectedController b) => a.idx.compareTo(b.idx));
+      ..sort((ConnectedController a, ConnectedController b) =>
+          a.idx.compareTo(b.idx));
     return List<ConnectedController>.unmodifiable(result);
   }
 
@@ -1206,14 +1209,16 @@ class Bluepad32Client extends ChangeNotifier {
     } catch (e) {
       _updateState(
         _state.copyWith(
-          errorMessage: 'Failed to update controller scanning: ${_formatError(e)}',
+          errorMessage:
+              'Failed to update controller scanning: ${_formatError(e)}',
         ),
       );
     }
   }
 
   /// Alias for [setControllerScanning].
-  Future<void> setScanningEnabled(bool enabled) => setControllerScanning(enabled);
+  Future<void> setScanningEnabled(bool enabled) =>
+      setControllerScanning(enabled);
 
   /// Sets the active controller button mapping layout on the firmware (`AC06`),
   /// or uploads [customMappings] when provided.
@@ -1225,7 +1230,8 @@ class Bluepad32Client extends ChangeNotifier {
       await setCustomMappings(customMappings);
       return;
     }
-    final GamepadMappings updatedMappings = _state.mappings.copyWith(type: type);
+    final GamepadMappings updatedMappings =
+        _state.mappings.copyWith(type: type);
     await setMappings(updatedMappings);
   }
 
@@ -1256,7 +1262,8 @@ class Bluepad32Client extends ChangeNotifier {
           authStatus: _isAuthenticationError(e)
               ? Bluepad32AuthStatus.required
               : _state.authStatus,
-          errorMessage: 'Failed to update controller mappings: ${_formatError(e)}',
+          errorMessage:
+              'Failed to update controller mappings: ${_formatError(e)}',
         ),
       );
     }
@@ -1335,7 +1342,8 @@ class Bluepad32Client extends ChangeNotifier {
     } catch (e) {
       _updateState(
         _state.copyWith(
-          errorMessage: 'Failed to update allowlist enforcement: ${_formatError(e)}',
+          errorMessage:
+              'Failed to update allowlist enforcement: ${_formatError(e)}',
         ),
       );
     }
@@ -1373,7 +1381,8 @@ class Bluepad32Client extends ChangeNotifier {
     } catch (e) {
       _updateState(
         _state.copyWith(
-          errorMessage: 'Failed to update allowlist addresses: ${_formatError(e)}',
+          errorMessage:
+              'Failed to update allowlist addresses: ${_formatError(e)}',
         ),
       );
     }
@@ -1384,7 +1393,8 @@ class Bluepad32Client extends ChangeNotifier {
     if (address.isZero) {
       _updateState(
         _state.copyWith(
-          errorMessage: 'Cannot add all-zero MAC address (00:00:00:00:00:00) to allowlist.',
+          errorMessage:
+              'Cannot add all-zero MAC address (00:00:00:00:00:00) to allowlist.',
         ),
       );
       return;
@@ -1422,7 +1432,8 @@ class Bluepad32Client extends ChangeNotifier {
     } catch (e) {
       _updateState(
         _state.copyWith(
-          errorMessage: 'Failed to update virtual devices setting: ${_formatError(e)}',
+          errorMessage:
+              'Failed to update virtual devices setting: ${_formatError(e)}',
         ),
       );
     }
@@ -1495,7 +1506,8 @@ class Bluepad32Client extends ChangeNotifier {
     } catch (e) {
       _updateState(
         _state.copyWith(
-          errorMessage: 'Failed to disconnect controller #$idx: ${_formatError(e)}',
+          errorMessage:
+              'Failed to disconnect controller #$idx: ${_formatError(e)}',
         ),
       );
     }

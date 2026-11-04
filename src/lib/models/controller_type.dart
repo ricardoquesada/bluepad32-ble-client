@@ -92,7 +92,8 @@ enum Bluepad32ControllerType {
     if (value == -1 || value == 0xFFFF) {
       return Bluepad32ControllerType.none;
     }
-    for (final Bluepad32ControllerType candidate in Bluepad32ControllerType.values) {
+    for (final Bluepad32ControllerType candidate
+        in Bluepad32ControllerType.values) {
       if (candidate.value == value) {
         return candidate;
       }
@@ -131,8 +132,10 @@ enum Bluepad32ControllerSubtype {
 
   /// Decodes a `uint8_t` wire value into a [Bluepad32ControllerSubtype].
   static Bluepad32ControllerSubtype fromValue(int value) {
-    for (final Bluepad32ControllerSubtype candidate in Bluepad32ControllerSubtype.values) {
-      if (candidate != Bluepad32ControllerSubtype.unknown && candidate.value == value) {
+    for (final Bluepad32ControllerSubtype candidate
+        in Bluepad32ControllerSubtype.values) {
+      if (candidate != Bluepad32ControllerSubtype.unknown &&
+          candidate.value == value) {
         return candidate;
       }
     }
@@ -177,7 +180,8 @@ enum Bluepad32DeviceState {
   /// Decodes a `uint8_t` wire value into a [Bluepad32DeviceState].
   static Bluepad32DeviceState fromValue(int value) {
     for (final Bluepad32DeviceState candidate in Bluepad32DeviceState.values) {
-      if (candidate != Bluepad32DeviceState.unknown && candidate.value == value) {
+      if (candidate != Bluepad32DeviceState.unknown &&
+          candidate.value == value) {
         return candidate;
       }
     }

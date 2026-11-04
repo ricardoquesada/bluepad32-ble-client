@@ -134,9 +134,8 @@ class _ScanScreenState extends State<ScanScreen> {
       );
     }
     try {
-      final List<Guid> withServices = _filterByBluepad32
-          ? <Guid>[Bluepad32Uuids.service]
-          : const <Guid>[];
+      final List<Guid> withServices =
+          _filterByBluepad32 ? <Guid>[Bluepad32Uuids.service] : const <Guid>[];
       if (widget.onStartScan != null) {
         await widget.onStartScan!(withServices: withServices);
       } else {

@@ -40,7 +40,8 @@ abstract final class Bluepad32Uuids {
   static final Guid version = Guid('4627c4a4-ac01-46b9-b688-afc5c1bf7f63');
 
   /// `AC02` (`READ | DYNAMIC`): Maximum supported concurrent connections (`uint8_t`).
-  static final Guid maxConnections = Guid('4627c4a4-ac02-46b9-b688-afc5c1bf7f63');
+  static final Guid maxConnections =
+      Guid('4627c4a4-ac02-46b9-b688-afc5c1bf7f63');
 
   /// `AC03` (`READ | WRITE | DYNAMIC`): Whether BLE controller connections are enabled (`uint8_t`, 0 or 1).
   static final Guid bleEnabled = Guid('4627c4a4-ac03-46b9-b688-afc5c1bf7f63');
@@ -49,28 +50,34 @@ abstract final class Bluepad32Uuids {
   static final Guid scanning = Guid('4627c4a4-ac04-46b9-b688-afc5c1bf7f63');
 
   /// `AC05` (`READ | NOTIFY | DYNAMIC`): Connected controller table (`N * 16`-byte `compact_device_t` records).
-  static final Guid connectedDevices = Guid('4627c4a4-ac05-46b9-b688-afc5c1bf7f63');
+  static final Guid connectedDevices =
+      Guid('4627c4a4-ac05-46b9-b688-afc5c1bf7f63');
 
   /// `AC06` (`READ | WRITE | DYNAMIC`): Controller button mapping layout (`uint8_t`: 0=Xbox, 1=Switch, 2=Custom; or 29-byte `[2, ...28B...]`).
   static final Guid mappings = Guid('4627c4a4-ac06-46b9-b688-afc5c1bf7f63');
 
   /// `AC07` (`READ | WRITE | DYNAMIC`): Whether the Bluetooth MAC allowlist is enforced (`uint8_t`, 0 or 1).
-  static final Guid allowlistEnabled = Guid('4627c4a4-ac07-46b9-b688-afc5c1bf7f63');
+  static final Guid allowlistEnabled =
+      Guid('4627c4a4-ac07-46b9-b688-afc5c1bf7f63');
 
   /// `AC08` (`READ | WRITE | DYNAMIC`): Concatenated 6-byte `bd_addr_t` allowlist entries (`K * 6` bytes).
-  static final Guid allowlistAddresses = Guid('4627c4a4-ac08-46b9-b688-afc5c1bf7f63');
+  static final Guid allowlistAddresses =
+      Guid('4627c4a4-ac08-46b9-b688-afc5c1bf7f63');
 
   /// `AC09` (`READ | WRITE | DYNAMIC`): Whether virtual child devices (e.g., touchpad mouse) are enabled (`uint8_t`).
-  static final Guid virtualDeviceEnabled = Guid('4627c4a4-ac09-46b9-b688-afc5c1bf7f63');
+  static final Guid virtualDeviceEnabled =
+      Guid('4627c4a4-ac09-46b9-b688-afc5c1bf7f63');
 
   /// Alias for [virtualDeviceEnabled].
   static final Guid virtualDevicesEnabled = virtualDeviceEnabled;
 
   /// `AC0A` (`WRITE | DYNAMIC`): Disconnects and deletes the controller at slot `idx` (`uint8_t`).
-  static final Guid disconnectDevice = Guid('4627c4a4-ac0a-46b9-b688-afc5c1bf7f63');
+  static final Guid disconnectDevice =
+      Guid('4627c4a4-ac0a-46b9-b688-afc5c1bf7f63');
 
   /// `AC0B` (`WRITE | DYNAMIC`): Deletes stored Bluetooth bond keys when `1` (`uint8_t`) is written.
-  static final Guid deleteStoredKeys = Guid('4627c4a4-ac0b-46b9-b688-afc5c1bf7f63');
+  static final Guid deleteStoredKeys =
+      Guid('4627c4a4-ac0b-46b9-b688-afc5c1bf7f63');
 
   /// `AC0C` (`WRITE | DYNAMIC`): Reboots the Bluepad32 microcontroller when `1` (`uint8_t`) is written.
   static final Guid resetDevice = Guid('4627c4a4-ac0c-46b9-b688-afc5c1bf7f63');
