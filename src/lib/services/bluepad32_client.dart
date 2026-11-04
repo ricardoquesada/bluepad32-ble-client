@@ -68,6 +68,7 @@ class _DeviceBluepad32GattTransport implements Bluepad32GattTransport {
   final StreamController<List<int>> _notificationController =
       StreamController<List<int>>.broadcast();
   StreamSubscription<List<int>>? _ac05Subscription;
+  StreamSubscription<void>? _servicesResetSubscription;
 
   _DeviceBluepad32GattTransport(this._device);
 
@@ -79,35 +80,95 @@ class _DeviceBluepad32GattTransport implements Bluepad32GattTransport {
   Stream<List<int>> get connectedDevicesNotificationStream =>
       _notificationController.stream;
 
+  StreamSubscription<void>? _tryListenServicesReset(void Function() onReset) {
+    try {
+      return _device.onServicesReset.listen(
+        (_) => onReset(),
+        onError: (_) {},
+      );
+    } on Object {
+      return null;
+    }
+  }
+
+  Future<void> _discoverBluepadService() async {
+    final List<BluetoothService> services = await _device.discoverServices();
+    BluetoothService? bluepadService;
+    for (final BluetoothService service in services) {
+      if (service.uuid == Bluepad32Uuids.service) {
+        bluepadService = service;
+        break;
+      }
+    }
+    if (bluepadService == null) {
+      throw StateError(
+        'Bluepad32 GATT service (${Bluepad32Uuids.service}) not found on device.',
+      );
+    }
+
+    _characteristics.clear();
+    for (final BluetoothCharacteristic characteristic
+        in bluepadService.characteristics) {
+      _characteristics[characteristic.uuid] = characteristic;
+    }
+  }
+
   @override
   Future<void> connectAndDiscover() async {
     // 1. Connect and await automatic Android MTU=512 negotiation before service discovery.
     await _device.connectAndUpdateStream();
 
     try {
-      // 2. Discover GATT services and locate the primary Bluepad32 service.
-      final List<BluetoothService> services = await _device.discoverServices();
-      BluetoothService? bluepadService;
-      for (final BluetoothService service in services) {
-        if (service.uuid == Bluepad32Uuids.service) {
-          bluepadService = service;
-          break;
+      await _servicesResetSubscription?.cancel();
+      _servicesResetSubscription = null;
+
+      final Completer<void> servicesResetSignal = Completer<void>();
+      final StreamSubscription<void>? initialResetSub =
+          _tryListenServicesReset(() {
+        if (!servicesResetSignal.isCompleted) {
+          servicesResetSignal.complete();
         }
+      });
+
+      try {
+        // 2. Discover GATT services and index characteristics AC01..AC10 by UUID.
+        await _discoverBluepadService();
+
+        // 3. If AC10 (hidAllowTypes) is absent from the initial discovery result,
+        // the OS BLE stack (e.g. macOS/iOS CoreBluetooth) may have returned a
+        // stale cached GATT table. Wait for the peripheral's GATT Service Changed
+        // (0x2A05) indication to invalidate the OS cache and re-discover services.
+        if (initialResetSub != null &&
+            !_characteristics.containsKey(Bluepad32Uuids.hidAllowTypes)) {
+          try {
+            await servicesResetSignal.future.timeout(
+              const Duration(milliseconds: 350),
+            );
+          } on TimeoutException {
+            // Re-run discovery even if the OS cache invalidated silently.
+          }
+          try {
+            await _discoverBluepadService();
+          } catch (_) {
+            // Ignore transient discovery errors while CoreBluetooth resets its cache.
+          }
+        }
+      } finally {
+        await initialResetSub?.cancel();
       }
-      if (bluepadService == null) {
-        throw StateError(
-          'Bluepad32 GATT service (${Bluepad32Uuids.service}) not found on device.',
+
+      // 4. Listen for future GATT Service Changed resets while connected.
+      final StreamSubscription<void>? resetSub = _tryListenServicesReset(() {
+        unawaited(
+          _discoverBluepadService().catchError((_) {}),
         );
+      });
+      if (resetSub != null) {
+        _device.cancelWhenDisconnected(resetSub);
+        _servicesResetSubscription = resetSub;
       }
 
-      // 3. Index characteristics AC01..AC0F by UUID.
-      _characteristics.clear();
-      for (final BluetoothCharacteristic characteristic
-          in bluepadService.characteristics) {
-        _characteristics[characteristic.uuid] = characteristic;
-      }
-
-      // 4. Cancel any stale AC05 subscription; enableNotifications() will subscribe
+      // 5. Cancel any stale AC05 subscription; enableNotifications() will subscribe
       // once AC0E auth status is confirmed open or authenticated.
       await _ac05Subscription?.cancel();
       _ac05Subscription = null;
@@ -143,6 +204,8 @@ class _DeviceBluepad32GattTransport implements Bluepad32GattTransport {
 
   @override
   Future<void> disconnect() async {
+    await _servicesResetSubscription?.cancel();
+    _servicesResetSubscription = null;
     await _ac05Subscription?.cancel();
     _ac05Subscription = null;
     _characteristics.clear();
@@ -151,7 +214,13 @@ class _DeviceBluepad32GattTransport implements Bluepad32GattTransport {
 
   @override
   Future<List<int>> readCharacteristic(Guid uuid) async {
-    final BluetoothCharacteristic? characteristic = _characteristics[uuid];
+    BluetoothCharacteristic? characteristic = _characteristics[uuid];
+    if (characteristic == null && _characteristics.isNotEmpty) {
+      try {
+        await _discoverBluepadService();
+      } catch (_) {}
+      characteristic = _characteristics[uuid];
+    }
     if (characteristic == null) {
       throw StateError('GATT characteristic $uuid is not available.');
     }
@@ -160,7 +229,13 @@ class _DeviceBluepad32GattTransport implements Bluepad32GattTransport {
 
   @override
   Future<void> writeCharacteristic(Guid uuid, List<int> value) async {
-    final BluetoothCharacteristic? characteristic = _characteristics[uuid];
+    BluetoothCharacteristic? characteristic = _characteristics[uuid];
+    if (characteristic == null && _characteristics.isNotEmpty) {
+      try {
+        await _discoverBluepadService();
+      } catch (_) {}
+      characteristic = _characteristics[uuid];
+    }
     if (characteristic == null) {
       throw StateError('GATT characteristic $uuid is not available.');
     }
@@ -169,6 +244,8 @@ class _DeviceBluepad32GattTransport implements Bluepad32GattTransport {
 
   @override
   void dispose() {
+    _servicesResetSubscription?.cancel();
+    _servicesResetSubscription = null;
     _ac05Subscription?.cancel();
     _ac05Subscription = null;
     _notificationController.close();

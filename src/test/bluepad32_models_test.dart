@@ -2449,6 +2449,93 @@ void main() {
         );
       },
     );
+
+    test(
+      'FL-CLI-08: _DeviceBluepad32GattTransport re-discovers AC10 after stale OS GATT cache invalidates',
+      () async {
+        final _FakeGattBluetoothDevice device = _FakeGattBluetoothDevice(
+          id: 'AA:BB:CC:DD:EE:11',
+        );
+        final Map<Guid, _FakeBluetoothCharacteristic> chars =
+            <Guid, _FakeBluetoothCharacteristic>{};
+        for (final Guid uuid in Bluepad32Uuids.allCharacteristics.where(
+          (Guid u) => u != Bluepad32Uuids.hidAllowTypes,
+        )) {
+          chars[uuid] = _FakeBluetoothCharacteristic(
+            remoteId: device.remoteId,
+            serviceUuid: Bluepad32Uuids.service,
+            characteristicUuid: uuid,
+          );
+        }
+        chars[Bluepad32Uuids.version]!.valueToRead = utf8.encode('v4.4.0');
+        chars[Bluepad32Uuids.maxConnections]!.valueToRead = <int>[4];
+        chars[Bluepad32Uuids.bleEnabled]!.valueToRead = <int>[1];
+        chars[Bluepad32Uuids.scanning]!.valueToRead = <int>[0];
+        chars[Bluepad32Uuids.connectedDevices]!.valueToRead =
+            ConnectedController.empty(0).toBytes();
+        chars[Bluepad32Uuids.mappings]!.valueToRead = <int>[0];
+        chars[Bluepad32Uuids.allowlistEnabled]!.valueToRead = <int>[0];
+        chars[Bluepad32Uuids.allowlistAddresses]!.valueToRead = const <int>[];
+        chars[Bluepad32Uuids.virtualDeviceEnabled]!.valueToRead = <int>[1];
+        chars[Bluepad32Uuids.serviceName]!.valueToRead =
+            utf8.encode('Bluepad32');
+        chars[Bluepad32Uuids.serviceAuth]!.valueToRead = <int>[0];
+        chars[Bluepad32Uuids.customMappings]!.valueToRead =
+            CustomGamepadMappings.xboxDefault().toBytes();
+
+        // 1. Initial discovery serves stale OS cache without AC10.
+        device.servicesToReturn = <BluetoothService>[
+          _FakeBluetoothService(
+            remoteId: device.remoteId,
+            serviceUuid: Bluepad32Uuids.service,
+            characteristics: chars.values.toList(),
+          ),
+        ];
+
+        final Bluepad32Client client = Bluepad32Client(device: device);
+        addTearDown(client.dispose);
+
+        await client.connect();
+        expect(client.state.isConnected, isTrue);
+
+        // 2. Simulate OS GATT cache invalidation (0x2A05 Service Changed) exposing AC10.
+        final _FakeBluetoothCharacteristic ac10Char =
+            _FakeBluetoothCharacteristic(
+          remoteId: device.remoteId,
+          serviceUuid: Bluepad32Uuids.service,
+          characteristicUuid: Bluepad32Uuids.hidAllowTypes,
+        )..valueToRead = <int>[Bluepad32HidDeviceTypes.all];
+        chars[Bluepad32Uuids.hidAllowTypes] = ac10Char;
+        device.servicesToReturn = <BluetoothService>[
+          _FakeBluetoothService(
+            remoteId: device.remoteId,
+            serviceUuid: Bluepad32Uuids.service,
+            characteristics: chars.values.toList(),
+          ),
+        ];
+
+        // 3. Toggling Allowed HID Device Types lazily re-discovers AC10 and writes the updated mask.
+        await client.toggleAllowedHidDeviceType(
+          Bluepad32HidDeviceTypes.mouse,
+          false,
+        );
+        expect(client.state.errorMessage, isNull);
+        expect(
+          ac10Char.lastWrittenValue,
+          equals(<int>[
+            Bluepad32HidDeviceTypes.gamepad | Bluepad32HidDeviceTypes.keyboard,
+          ]),
+        );
+        expect(
+          client.state.allowedHidDeviceTypes,
+          equals(
+            Bluepad32HidDeviceTypes.gamepad | Bluepad32HidDeviceTypes.keyboard,
+          ),
+        );
+
+        await chars[Bluepad32Uuids.connectedDevices]!.disposeController();
+      },
+    );
   });
 }
 
