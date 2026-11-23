@@ -322,6 +322,11 @@ jobs:
           # Create symlink-preserving zip for notarization using ditto
           ditto -c -k --keepParent "$APP_PATH" notarize.zip
 
+          # Strip accidental whitespace/newlines from pasted GitHub Actions secrets
+          APPLE_ID="${APPLE_ID//[$'\r\n\t ']/}"
+          APPLE_PASSWORD="${APPLE_PASSWORD//[$'\r\n\t ']/}"
+          APPLE_TEAM_ID="${APPLE_TEAM_ID//[$'\r\n\t ']/}"
+
           # Submit to Apple Notary Service and block until notarization completes
           xcrun notarytool submit notarize.zip \
             --apple-id "$APPLE_ID" \
