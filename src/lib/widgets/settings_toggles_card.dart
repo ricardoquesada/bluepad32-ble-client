@@ -1,6 +1,6 @@
 // Material 3 dashboard card for toggling BLE radio, controller scanning, MAC allowlist enforcement, and allowed HID device types (`AC03`, `AC04`, `AC07`, `AC10`).
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../models/bluepad32_state.dart';
 

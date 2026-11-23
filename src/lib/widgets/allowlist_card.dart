@@ -1,6 +1,6 @@
 // Material 3 dashboard card and modal input dialog for managing the Bluetooth MAC allowlist (`AC08`).
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../models/mac_address.dart';
 

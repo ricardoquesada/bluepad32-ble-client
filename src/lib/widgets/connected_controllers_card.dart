@@ -1,6 +1,6 @@
 // Material 3 dashboard card displaying active controller slots (`AC05`) and per-slot disconnect actions (`AC0A`).
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../models/connected_controller.dart';
 

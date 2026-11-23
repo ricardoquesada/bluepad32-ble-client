@@ -1,6 +1,6 @@
 // Material 3 Danger Zone dashboard card for destructive/system actions (`AC0B` and `AC0C`).
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// Material 3 Danger Zone dashboard card providing confirmation-guarded buttons
 /// for "Delete Stored Bond Keys" (`AC0B`) and "Reset / Reboot Device" (`AC0C`).

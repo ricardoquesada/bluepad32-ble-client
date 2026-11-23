@@ -26,7 +26,7 @@ import 'package:bluepad32_client/widgets/mappings_card.dart';
 import 'package:bluepad32_client/widgets/settings_toggles_card.dart';
 import 'package:bluepad32_client/widgets/system_actions_card.dart';
 import 'package:bluepad32_client/widgets/system_info_card.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
 

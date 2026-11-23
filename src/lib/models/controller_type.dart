@@ -1,7 +1,7 @@
 // Domain enums mapping Bluepad32 firmware controller types, attachment subtypes,
 // and Bluetooth HID connection lifecycle states.
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// Controller model classification matching `uni_controller_type_t` in
 /// `src/components/bluepad32/include/controller/uni_controller_type.h`.

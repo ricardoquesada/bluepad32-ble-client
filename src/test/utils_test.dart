@@ -16,7 +16,7 @@ import 'dart:async';
 import 'package:bluepad32_client/utils/extra.dart';
 import 'package:bluepad32_client/utils/snackbar.dart';
 import 'package:bluepad32_client/utils/utils.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_test/flutter_test.dart';

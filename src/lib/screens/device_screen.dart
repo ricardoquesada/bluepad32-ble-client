@@ -3,7 +3,7 @@
 /// across GATT characteristics `AC01` through `AC0F`.
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 import '../services/bluepad32_client.dart';

@@ -24,7 +24,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:bluepad32_client/services/bluepad32_client.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
 

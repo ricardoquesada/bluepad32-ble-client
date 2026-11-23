@@ -14,7 +14,7 @@ import 'package:bluepad32_client/models/bluepad32_uuids.dart';
 import 'package:bluepad32_client/screens/scan_screen.dart';
 import 'package:bluepad32_client/widgets/scan_result_tile.dart';
 import 'package:bluepad32_client/widgets/system_device_tile.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
 
