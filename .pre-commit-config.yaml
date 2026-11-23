@@ -5,7 +5,7 @@ default_install_hook_types:
 repos:
   # 1. General repository & cross-platform filesystem hygiene
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: v6.0.0
     hooks:
       - id: trailing-whitespace
         stages: [pre-commit]
@@ -23,7 +23,7 @@ repos:
 
   # 2. GitHub Actions workflow validation (.github/workflows/release.yml)
   - repo: https://github.com/rhysd/actionlint
-    rev: v1.7.7
+    rev: v1.7.12
     hooks:
       - id: actionlint
         stages: [pre-commit]
